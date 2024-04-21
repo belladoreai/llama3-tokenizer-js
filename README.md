@@ -67,7 +67,7 @@ llama3Tokenizer.encode("Hello world!", { bos: false, eos: false })
 
 Note that, contrary to LLaMA 1 tokenizer, the LLaMA 3 tokenizer does not add a preceding space (please open an issue if there are circumstances in which a preceding space is still added).
 
-There are various special tokens in LLaMA 3 tokenizer. Looks like (some of these might be needed when working with the instruct fine tunes)[https://github.com/meta-llama/llama3/blob/main/llama/tokenizer.py#L202-L229]. I have added a `getSpecialTokenId` convenience function. Example usage:
+There are various special tokens in LLaMA 3 tokenizer. Looks like [some of these might be needed when working with the instruct fine tunes](https://github.com/meta-llama/llama3/blob/main/llama/tokenizer.py#L202-L229). I have added a `getSpecialTokenId` convenience function. Example usage:
 
 ```
 const tokens = []
@@ -127,7 +127,6 @@ Release steps:
 8. bump version number in example-demo/package.json
 9. cd example-demo && npm run build && live-server
 10. push example demo changes to github
-11. create release in github
 
 ## Who did this
 
