@@ -1,5 +1,5 @@
 import { useState } from "react";
-import llamaTokenizer from 'llama-tokenizer-js'
+import llama3Tokenizer from 'llama3-tokenizer-js'
 import './App.css';
 
 // Stylizing tokens is mostly copied from gpt-tokenizer demo.
@@ -57,14 +57,14 @@ const App = () => {
     "Replace this text in the input field to see how 🦙 tokenization works.",
   )
 
-  const encodedTokens = llamaTokenizer.encode(inputText);
+  const encodedTokens = llama3Tokenizer.encode(inputText);
 
   const decodedTokens = encodedTokens.map(token => {
-    const chars = llamaTokenizer.decode([token], false, false)
+    const chars = llama3Tokenizer.decode([token], false, false)
     if (token === 0) return "<unk>"
     if (token === 1) return "<s>"
     if (token === 2) return "</s>"
-    if (token >= 3 && token <= 258) return llamaTokenizer.vocabById[token]
+    if (token >= 3 && token <= 258) return llama3Tokenizer.vocabById[token]
     return chars
   })
 
@@ -72,8 +72,8 @@ const App = () => {
     <>
       <h1>
         Welcome to 🦙{" "}
-        <a href="https://github.com/belladoreai/llama-tokenizer-js" target="_blank">
-        llama-tokenizer-js 
+        <a href="https://github.com/belladoreai/llama3-tokenizer-js" target="_blank">
+        llama3-tokenizer-js 
         </a>{" "}🦙
         playground!
       </h1>
@@ -105,10 +105,10 @@ const App = () => {
             justifyContent: "right",
           }}
         >
-          <a href="https://www.npmjs.com/package/llama-tokenizer-js" target="_blank" style={{margin: "10px"}}>
+          <a href="https://www.npmjs.com/package/llama3-tokenizer-js" target="_blank" style={{margin: "10px"}}>
             <img src="npm.png" alt="GitHub logo" width="100" />
           </a>
-          <a href="https://github.com/belladoreai/llama-tokenizer-js" target="_blank">
+          <a href="https://github.com/belladoreai/llama3-tokenizer-js" target="_blank">
             <img src="github.png" alt="GitHub logo" width="100" />
           </a>
         </div>
