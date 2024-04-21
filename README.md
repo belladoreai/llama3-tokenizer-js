@@ -67,6 +67,19 @@ llama3Tokenizer.encode("Hello world!", { bos: false, eos: false })
 
 Note that, contrary to LLaMA 1 tokenizer, the LLaMA 3 tokenizer does not add a preceding space (please open an issue if there are circumstances in which a preceding space is still added).
 
+There are various special tokens in LLaMA 3 tokenizer. Looks like (some of these might be needed when working with the instruct fine tunes)[https://github.com/meta-llama/llama3/blob/main/llama/tokenizer.py#L202-L229]. I have added a `getSpecialTokenId` convenience function. Example usage:
+
+```
+const tokens = []
+tokens.push(llama3Tokenizer.getSpecialTokenId('<|begin_of_text|>'))
+tokens.push(llama3Tokenizer.getSpecialTokenId('<|start_header_id>'))
+tokens.push(llama3Tokenizer.encode(message["role"], { bos: false, eos: false }))
+tokens.push(llama3Tokenizer.getSpecialTokenId('<|end_header_id|>'))
+tokens.push(llama3Tokenizer.encode("\n\n", { bos: false, eos: false }))
+tokens.push(llama3Tokenizer.encode(message["content"], { bos: false, eos: false }))
+tokens.push(llama3Tokenizer.getSpecialTokenId('<|eot_id|>'))
+```
+
 ## Tests
 
 You can run tests with:
