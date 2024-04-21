@@ -11,22 +11,129 @@
  * 
  */
 
-const base64decode = function(encodedString) {
+/**
+ * Helper used to unpack binary data blobs that were baked inside this file with base64
+ */
+const base64decodeUTF8 = function(encodedString) {
     return atob(encodedString)
 }
 
-const utf8ByteToHex = (c) => {
-    const hexValue = c.toString(16).toUpperCase().padStart(2, '0');
-    return `<0x${hexValue}>`;
+/**
+ * Helper to clean up a Regex pattern from Python/Rust codebase.
+ * Copied with minor changes from https://github.com/xenova/transformers.js
+ */
+const getCleanedRegex = (dirtyRegexString) => {
+    // In certain cases, the pattern may contain unnecessary escape sequences (e.g., \# or \& or \~).
+    // i.e., valid in Python (where the patterns are exported from) but invalid in JavaScript (where the patterns are parsed).
+    // This isn't an issue when creating the regex w/o the 'u' flag, but it is when the 'u' flag is used.
+    // For this reason, it is necessary to remove these backslashes before creating the regex.
+    // See https://stackoverflow.com/a/63007777/13989043 for more information
+
+    let regex = dirtyRegexString.replace(/\\([#&~])/g, '$1');
+
+    // A mapping of regex patterns to their equivalent (but longer) JS-compatible versions.
+    const PROBLEMATIC_REGEX_MAP = new Map([
+        // This uses the case insensitive group modifier, which is not supported in JavaScript.
+        // When parsing the regex, an "Invalid group" error is thrown.
+        ["(?i:'s|'t|'re|'ve|'m|'ll|'d)", "(?:'([sS]|[tT]|[rR][eE]|[vV][eE]|[mM]|[lL][lL]|[dD]))"],
+    ])
+
+    // Handle special cases where the regex contains invalid (non-JS compatible) syntax.
+    for (const [key, value] of PROBLEMATIC_REGEX_MAP) {
+        regex = regex.replaceAll(key, value);
+    }
+
+    return new RegExp(regex, 'gu')
 }
 
-const hexToUtf8Byte = (hex) => {
-    const strippedHex = hex.replace(/<0x|>/g, '')
-    return parseInt(strippedHex, 16)
+const DIRTY_LLAMA3_REGEX_STRING = "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+"
+
+const CLEAN_LLAMA3_REGEX_STRING = getCleanedRegex(DIRTY_LLAMA3_REGEX_STRING)
+
+/**
+ * Helper to split a string on a regex, but keep the delimiters.
+ * This is required, because the JavaScript `.split()` method does not keep the delimiters,
+ * and wrapping in a capturing group causes issues with existing capturing groups (due to nesting).
+ * Copied from https://github.com/xenova/transformers.js
+ */
+function regexSplit(text, regex) {
+    const result = [];
+    let prev = 0;
+    for (const match of text.matchAll(regex)) {
+        const fullMatch = match[0];
+        if (prev < match.index) {
+            result.push(text.slice(prev, match.index));
+        }
+        if (fullMatch.length > 0) {
+            result.push(fullMatch);
+        }
+        prev = match.index + fullMatch.length;
+    }
+    if (prev < text.length) {
+        result.push(text.slice(prev));
+    }
+    return result;
 }
 
+/**
+ * Returns list of utf-8 byte and a mapping to unicode strings.
+ * Specifically avoids mapping to whitespace/control characters the BPE code barfs on.
+ * Returns Object with utf-8 byte keys and unicode string values.
+ * Copied from https://github.com/xenova/transformers.js
+ */
+const BYTES_TO_UNICODE = (() => {
+    // Returns list of utf-8 byte and a mapping to unicode strings.
+    // We specifically avoids mapping to whitespace/control characters
+    // the bpe code barfs on.
+
+    const bs = [
+        ...Array.from({ length: "~".charCodeAt(0) - "!".charCodeAt(0) + 1 }, (_, i) => i + "!".charCodeAt(0)),
+        ...Array.from({ length: "¬".charCodeAt(0) - "¡".charCodeAt(0) + 1 }, (_, i) => i + "¡".charCodeAt(0)),
+        ...Array.from({ length: "ÿ".charCodeAt(0) - "®".charCodeAt(0) + 1 }, (_, i) => i + "®".charCodeAt(0)),
+    ];
+    const cs = bs.slice();
+    let n = 0;
+    for (let b = 0; b < 256; ++b) {
+        if (!bs.includes(b)) {
+            bs.push(b);
+            cs.push(256 + n);
+            n += 1;
+        }
+    }
+    const ccs = cs.map(n => String.fromCharCode(n));
+    return Object.fromEntries(bs.map((b, i) => [b, ccs[i]]));
+})();
+
+/**
+ * From https://ultimatecourses.com/blog/reverse-object-keys-and-values-in-javascript
+ */
+function reverseDictionary(data) {
+    // 
+    return Object.fromEntries(Object.entries(data).map(([key, value]) => [value, key]));
+}
+
+const UNICODE_TO_BYTES = reverseDictionary(BYTES_TO_UNICODE);
+
+const llama3SpecialTokens = [
+    '<|begin_of_text|>',
+    '<|end_of_text|>',
+    '<|reserved_special_token_0|>',
+    '<|reserved_special_token_1|>',
+    '<|reserved_special_token_2|>',
+    '<|reserved_special_token_3|>',
+    '<|start_header_id|>',
+    '<|end_header_id|>',
+    '<|reserved_special_token_4|>',
+    '<|eot_id|>'
+];
+for (let i = 5; i <= 250; i++) {
+    llama3SpecialTokens.push(`<|reserved_special_token_${i}|>`);
+}
+
+/**
+ * PriorityQueue implementation is copied from https://stackoverflow.com/a/42919752 with minor refactoring
+ */
 class PriorityQueue {
-    // PriorityQueue implementation is copied from https://stackoverflow.com/a/42919752 with minor refactoring
     constructor(comparator = (a, b) => a > b) {
         this._heap = [];
         this._comparator = comparator;
@@ -107,10 +214,13 @@ export class LlamaTokenizer {
     utf8Encoder = new TextEncoder();
     utf8Decoder = new TextDecoder('utf-8');
 
-    constructor(vocab_base64, merges_binary) {
+    constructor(vocab_base64, merges_binary, special_tokens) {
         // Array where index represents tokenId, value represents tokenString
         this.vocabById = this.decodeVocabulary(vocab_base64 || llama_vocab_base64);
-        // Map where key represents tokenString, value represents tokenId
+        // Add special tokens to vocabulary
+        this.vocabById.push(...(special_tokens || llama3SpecialTokens));
+
+        // Create vocabByString (map where key represents tokenString, value represents tokenId)
         this.vocabByString = new Map();
         this.vocabById.forEach((tokenString, tokenId) => {
             this.vocabByString.set(tokenString, tokenId);
@@ -119,28 +229,58 @@ export class LlamaTokenizer {
         this.merges = this.decompressMerges(merges_binary || llama_merges_binary);
     }
 
+    getSpecialTokenId(specialTokenString) {
+        if (!specialTokenString.startsWith("<|") || !specialTokenString.endsWith("|>")) {
+            throw Error('Invalid input. Use this syntax: <|eot_id|>')
+        }
+        if (!this.vocabByString.has(specialTokenString)) {
+            throw Error('Token not found from vocabulary')
+        }
+        return this.vocabByString.get(specialTokenString)
+    }
+
     getMergeIdentifierString(firstTokenId, secondTokenId) {
         return this.vocabById[firstTokenId] + " " + this.vocabById[secondTokenId]
     }
 
     decompressMerges(merges_binary) {
-        // Base64 decode binary.
-        const byteArrayString = base64decode(merges_binary)
-    
-        // Convert byteArrayString to byteArray.
-        const byteArray = new Uint8Array(byteArrayString.length);
-        for (let i = 0; i < byteArrayString.length; i++) {
-            byteArray[i] = byteArrayString.charCodeAt(i);
-        }
-    
-        // Each byte-pair represents a tokenId.
-        // Convert byte-pairs to tokenIds (integers between 0 and 32000).
+        const byteString = base64decodeUTF8(merges_binary)
+
+        // Each 17 bits represents a tokenid (integer between 0 and 128000)
+        // Because that isn't cleanly divided into bytes of 8 bits,
+        // we need to work with a mental model of operating on a sequence of bits.
         const tokenIds = [];
-        for (let i = 0; i < byteArray.length; i += 2) {
-            const byte1 = byteArray[i];
-            const byte2 = byteArray[i + 1];
-            const tokenId = byte1 + (byte2 << 8);
-            tokenIds.push(tokenId);
+        const maxBits = byteString.length * 8;
+        const firstPaddingBit = maxBits - (maxBits % 17);
+        const bitMask = [
+            0b11111111111111111,
+            0b111111111111111111,
+            0b1111111111111111111,
+            0b11111111111111111111,
+            0b111111111111111111111,
+            0b1111111111111111111111,
+            0b11111111111111111111111,
+            0b111111111111111111111111
+        ]
+        for (let bitIndex = 0; bitIndex < firstPaddingBit; bitIndex += 17) {
+            const byteIndex = bitIndex / 8;
+
+            // The 17 bits we want are contained within these 3 bytes (24 bits)
+            const byte1 = byteString.charCodeAt(byteIndex);
+            const byte2 = byteString.charCodeAt(byteIndex+1);
+            const byte3 = byteString.charCodeAt(byteIndex+2);
+
+            // Start by concatenating the bit representations of the 3 bytes
+            let tokenId = (byte1 << 16) + (byte2 << 8) + (byte3);
+
+            // Eliminate the extra bits from the left side of the bit sequence
+            tokenId = tokenId & bitMask[8 - (bitIndex % 8) - 1]
+
+            // Eliminate the extra bits from the right side of the bit sequence
+            tokenId = tokenId >> (8 - (17 - 8 - (8 - (bitIndex % 8))))
+
+            // Save completed tokenId
+            tokenIds.push(tokenId)
         }
     
         // Each pair of tokenIds represents a merge.
@@ -159,89 +299,71 @@ export class LlamaTokenizer {
      * Helper function to decode the vocabulary.
      * 
      * vocab_base64 is base64-encoded string of tokens delimited by '\n' (line break) in utf-8.
-     * The row number of the token (indexing from 0) represents the id of the token in LLaMA tokenizer.
+     * The row number of the token (indexing from 0) represents the id of the token in LLaMA 3 tokenizer.
      * 
      * Most tokens look like this: "ic" (without the quotes) (representing the "i" character followed by the "c" character)
      * Some tokens are special. In particular, spaces are replaced with the "▁" character and line-break is represented as "<0x0A>".
      * 
      * This helper function returns the vocabulary as an array that contains Strings representing tokens:
      * 
-     *  "<unk>"   // Special token: unknown token
-     *  "<s>"     // Special token: beginning of string 
-     *  "</s>"    // Special token: end of string
-     *  "<0x00>"  // Byte-level token representing the 0-byte
-     *  "<0x01>"  // Byte-level token ...
-     *  "<0x02>"  // Byte-level token ...
-     *  ...       // More byte-level tokens
-     *  "<0x0A>"  // Byte-level token representing '\n' (line break). This is one of the few byte-level tokens that appear to be actually needed in practice.
-     *  ...       // More byte-level tokens
-     *  "<0xFF>"  // Byte-level token ...
-     *  "▁▁"     // Token representing 2 consecutive spaces.
-     *  "▁t"     // Token representing the space character followed by the "t" character.
-     *  "er"      // Token representing the "e" character followed by the "r" character. Most tokens look like this.
-     *  ...       // 32000 tokens
+     *  "<unk>"             // Special token: unknown token
+     *  "<|begin_of_text|>" // Special token: beginning of string 
+     *  "<|end_of_text|>"   // Special token: end of string
+     *  "<0x00>"            // Byte-level token representing the 0-byte
+     *  "<0x01>"            // Byte-level token ...
+     *  "<0x02>"            // Byte-level token ...
+     *  ...                 // More byte-level tokens
+     *  "<0x0A>"            // Byte-level token representing '\n' (line break). This is one of the few byte-level tokens that appear to be actually needed in practice.
+     *  ...                 // More byte-level tokens
+     *  "<0xFF>"            // Byte-level token ...
+     *  "▁▁"               // Token representing 2 consecutive spaces.
+     *  "▁t"               // Token representing the space character followed by the "t" character.
+     *  "er"               // Token representing the "e" character followed by the "r" character. Most tokens look like this.
+     *  ...                // 128 000 tokens
      */
     decodeVocabulary(vocab_base64) {
-        const byteArray = Uint8Array.from(base64decode(vocab_base64), c => c.charCodeAt(0));
+        const byteArray = Uint8Array.from(base64decodeUTF8(vocab_base64), c => c.charCodeAt(0));
         const textDecoder = new TextDecoder('utf-8');
         return textDecoder.decode(byteArray).split("\n");
     }
 
-    mapCharactersToTokenIds(prompt, add_bos_token, add_preceding_space) {
-        const tokenIds = []
-        // Special "beginning of string" token.
-        if (add_bos_token) {
-            tokenIds.push(1)
+    encode(prompt, options) {
+
+        if (typeof options === typeof true) {
+            // This check is needed because parameters are different between LLaMA 1 tokenizer and LLaMA 3 tokenizer.
+            // If we don't have this check, then some users might inadvertently swap out the tokenizer without noticing
+            // that their boolean flags no longer do anything, leading to small discrepancies in their token counts.
+            throw Error('Error. You passed boolean parameter instead of options Object!')
         }
-        // Special "preceding space" added to beginning of prompt.
-        if (add_preceding_space) {
-            prompt = " " + prompt
-        }
-        // Special: spaces are represented as thick underscore ▁ (id 29871)
-        const promptAltered = (prompt).replaceAll(" ", this.vocabById[29871])
-        // We need to use Array.from to iterate over characters in order to support UTF-8 multipoint characters
-        const charArray = Array.from(promptAltered)
-        // Transform each character to its corresponding token
-        for (let i=0; i<charArray.length; i++) {
-            const c = charArray[i]
-            if (this.vocabByString.has(c)) {
-                // Typical case
-                tokenIds.push(this.vocabByString.get(c))
-            } else {
-                // Special case where token not found and we have to fallback to byte-level tokens.
-                const bytes = this.utf8Encoder.encode(c)
-                for (let j=0; j<bytes.length; j++) {
-                    const hex = this.vocabByString.get(utf8ByteToHex(bytes[j]))
-                    tokenIds.push(hex)
-                    if (!(hex >= 0)) {
-                        // This is not supposed to happen because the LLaMA vocabulary has a token corresponding to each byte,
-                        // but if this happens regardless, let's follow the protocol and tokenize to <UNK> token instead of crashing.
-                        console.log('Encountered unknown character ' + c + " (partial UTF-8 byte " + bytes[j] + " + hex + " + utf8ByteToHex(bytes[j]) + ")")
-                        tokenIds[tokenIds.length-1] = 0
-                    }
-                }
+
+        if (!options) {
+            // If user has not defined optional parameters, then use these defaults.
+            // The defaults have been chosen with intent to OVERESTIMATE token count rather than underestimate it.
+            options = {
+                bos: true,
+                eos: true
             }
-        }
-        return tokenIds
-    }
-
-    encode(prompt, add_bos_token=true, add_preceding_space=true, log_performance=false) {
-
-        let startTime = null
-        if (log_performance) {
-            startTime = performance.now()
         }
     
         if (!this.vocabById || !this.vocabByString || !this.merges) {
             console.log('Tokenizer not initialized properly!')
             return
         }
-        if (prompt.length === 0) {
-            return []
+
+        // Output array of tokenIds will be filled and returned in this encode function.
+        const output = []
+
+        // Special "beginning of string" token.
+        if (options.bos) {
+            output.push(this.getSpecialTokenId("<|begin_of_text|>"))
         }
-        // Initially each character is transformed to a tokenId, later there will be merges of these.
-        const tokenIds = this.mapCharactersToTokenIds(prompt, add_bos_token, add_preceding_space)
-    
+
+        // Pretokenizer sequence step 1: SplitPretokenizer
+        const splittedPrompt = regexSplit(prompt, CLEAN_LLAMA3_REGEX_STRING)
+
+        // Pretokenizer sequence step 2: ByteLevelPretokenizer maps all our bytes to unicode strings, this also does the mapping from space to Ġ (charCode 32 -> 32+256)
+        const bytemappedSplit = splittedPrompt.map(pretoken => Array.from(this.utf8Encoder.encode(pretoken), byte => BYTES_TO_UNICODE[byte]).join(''))
+
         // Set up priority queue to efficiently iterate merge possibilities in priority order
         const mergeQueue = new PriorityQueue((a, b) => {
             return a.mergePrio < b.mergePrio
@@ -260,210 +382,243 @@ export class LlamaTokenizer {
                 mergeQueue.push(leftNode)
             }
         }
-    
-        // Fill merge queue from initial merge possibilities and construct linked list
-        let firstTokenNode = {
-            origPos: 0,
-            tokenId: tokenIds[0],
-            prev: null,
-            next: null,
-        }
-        let prevTokenNode = firstTokenNode
-        for (let i=1; i<tokenIds.length; i++) {
-            const currTokenNode = {
-                origPos: i,
-                tokenId: tokenIds[i],
-                prev: prevTokenNode,
-                next: null
+
+        // The results from pretokenizer are handled one by one
+        const cache = new Map()
+        for (let pretokenIndex=0; pretokenIndex<bytemappedSplit.length; pretokenIndex++) {
+            const pretoken = bytemappedSplit[pretokenIndex]
+
+            // Because LLaMA 3 tokenizer is configured with ignore_merges,
+            // we check if the pretoken is found in our vocabulary,
+            // and if it is, we map it to tokenId directly from vocabulary
+            // (instead of normal BPE processing, like in LLaMA 1 tokenizer,
+            // where the BPE process sometimes leads to different tokens).
+            if (this.vocabByString.has(pretoken)) {
+                output.push(this.vocabByString.get(pretoken))
+                continue
             }
-            prevTokenNode.next = currTokenNode
-            addToMergeQueue(prevTokenNode)
-            prevTokenNode = currTokenNode
-        }
-    
-        // Perform merges in priority order
-        while (!mergeQueue.isEmpty()) {
-            const leftOfMerge = mergeQueue.pop()
-            // Check that this merge is still possible
-            if (leftOfMerge.deleted) continue
-            if (!leftOfMerge.next) continue
-            if (leftOfMerge.next.deleted) continue
-            
-            // Mark leftOfMerge and rightOfMerge as being deleted, because they are actually being replaced by a merged token.
-            leftOfMerge.deleted = true
-            leftOfMerge.next.deleted = true
-            // It's a little bit more complicated to fix the prev of leftOfMerge.
-            if (leftOfMerge.prev) {
-                const oldPrev = leftOfMerge.prev
-                // Mark oldPrev as deleted, to avoid erroneous merges later (ref to this node might exist in priorityqueue)
-                oldPrev.deleted = true
-                // Replace oldPrev within the linked list with a copy of itself
-                const newPrev = {
-                    origPos: oldPrev.origPos,
-                    tokenId: oldPrev.tokenId,
-                    prev: oldPrev.prev,
-                    next: oldPrev.next
+
+            // Pretoken was not found from vocabulary, so we proceed with normal BPE processing,
+            // which will result in a sequence of at least 2 tokens that represent the pretoken.
+
+            // Cache used for performance
+            if (cache.has(pretoken)) {
+                output.push(...(cache.get(pretoken)))
+                continue
+            }
+
+            // Initially each character is transformed to a tokenId, later there will be merges of these.
+            // Note that this array represents the tokenIds of the pretoken, not the entire sequence (there are typically multiple pretokens).
+            const tokenIds = []
+
+            // Transform each character to its corresponding token
+            const charArray = Array.from(pretoken)
+            for (let i=0; i<charArray.length; i++) {
+                const c = charArray[i]
+                if (!this.vocabByString.has(c)) {
+                    throw Error(`Character ${c} not found from vocabulary. This is not supposed to happen (vocab is supposed to cover everything that comes out of pretokenization).`)
                 }
-                leftOfMerge.prev = newPrev
-                // Update linked list reference of "prev of prev"
-                if (newPrev.prev) {
-                    newPrev.prev.next = newPrev
+                tokenIds.push(this.vocabByString.get(c))
+            }
+
+            // Fill merge queue from initial merge possibilities and construct linked list
+            let firstTokenNode = {
+                origPos: 0,
+                tokenId: tokenIds[0],
+                prev: null,
+                next: null,
+            }
+            let prevTokenNode = firstTokenNode
+            for (let i=1; i<tokenIds.length; i++) {
+                const currTokenNode = {
+                    origPos: i,
+                    tokenId: tokenIds[i],
+                    prev: prevTokenNode,
+                    next: null
+                }
+                prevTokenNode.next = currTokenNode
+                addToMergeQueue(prevTokenNode)
+                prevTokenNode = currTokenNode
+            }
+        
+            // Perform merges in priority order
+            while (!mergeQueue.isEmpty()) {
+                const leftOfMerge = mergeQueue.pop()
+                // Check that this merge is still possible
+                if (leftOfMerge.deleted) continue
+                if (!leftOfMerge.next) continue
+                if (leftOfMerge.next.deleted) continue
+                
+                // Mark leftOfMerge and rightOfMerge as being deleted, because they are actually being replaced by a merged token.
+                leftOfMerge.deleted = true
+                leftOfMerge.next.deleted = true
+                // It's a little bit more complicated to fix the prev of leftOfMerge.
+                if (leftOfMerge.prev) {
+                    const oldPrev = leftOfMerge.prev
+                    // Mark oldPrev as deleted, to avoid erroneous merges later (ref to this node might exist in priorityqueue)
+                    oldPrev.deleted = true
+                    // Replace oldPrev within the linked list with a copy of itself
+                    const newPrev = {
+                        origPos: oldPrev.origPos,
+                        tokenId: oldPrev.tokenId,
+                        prev: oldPrev.prev,
+                        next: oldPrev.next
+                    }
+                    leftOfMerge.prev = newPrev
+                    // Update linked list reference of "prev of prev"
+                    if (newPrev.prev) {
+                        newPrev.prev.next = newPrev
+                    } else {
+                        // If "prev of prev" does not exist, that means newPrev must be the new firstNode
+                        firstTokenNode = newPrev
+                    }
+                }
+                // Create node representing merge result
+                const resultOfMerge = {
+                    origPos: leftOfMerge.origPos,
+                    tokenId: this.vocabByString.get(leftOfMerge.mergeToString),
+                    prev: leftOfMerge.prev,
+                    next: leftOfMerge.next.next
+                }
+                // Consider adding to merge queue: prev--resultOfMerge
+                if (resultOfMerge.prev) {
+                    resultOfMerge.prev.next = resultOfMerge
+                    resultOfMerge.prev
+                    addToMergeQueue(resultOfMerge.prev)
                 } else {
-                    // If "prev of prev" does not exist, that means newPrev must be the new firstNode
-                    firstTokenNode = newPrev
+                    // If prev does not exist then this is the new firstNode
+                    firstTokenNode = resultOfMerge
                 }
+                // Consider adding to merge queue: resultOfMerge--next
+                if (resultOfMerge.next) {
+                    resultOfMerge.next.prev = resultOfMerge
+                    addToMergeQueue(resultOfMerge)
+                }
+        
             }
-            // Create node representing merge result
-            const resultOfMerge = {
-                origPos: leftOfMerge.origPos,
-                tokenId: this.vocabByString.get(leftOfMerge.mergeToString),
-                prev: leftOfMerge.prev,
-                next: leftOfMerge.next.next
+        
+            // Get final tokenIds for this pretoken by traversing the linked list
+            const mergedTokenIds = []
+            for (let currTokenNode = firstTokenNode; currTokenNode !== null; currTokenNode = currTokenNode.next) {
+                mergedTokenIds.push(currTokenNode.tokenId)
             }
-            // Consider adding to merge queue: prev--resultOfMerge
-            if (resultOfMerge.prev) {
-                resultOfMerge.prev.next = resultOfMerge
-                resultOfMerge.prev
-                addToMergeQueue(resultOfMerge.prev)
-            } else {
-                // If prev does not exist then this is the new firstNode
-                firstTokenNode = resultOfMerge
-            }
-            // Consider adding to merge queue: resultOfMerge--next
-            if (resultOfMerge.next) {
-                resultOfMerge.next.prev = resultOfMerge
-                addToMergeQueue(resultOfMerge)
-            }
-    
+
+            // Add to cache
+            cache.set(pretoken, mergedTokenIds)
+        
+            // Add to output the tokenIds that correspond to this pretoken
+            output.push(...mergedTokenIds)
         }
-    
-        // Get final tokenIds by traversing the linked list
-        const mergedTokenIds = []
-        for (let currTokenNode = firstTokenNode; currTokenNode !== null; currTokenNode = currTokenNode.next) {
-            mergedTokenIds.push(currTokenNode.tokenId)
+
+        // Special "end of string" token.
+        if (options.eos) {
+            output.push(this.getSpecialTokenId("<|end_of_text|>"))
         }
-    
-        if (log_performance) {
-            const endTime = performance.now()
-            console.log('Tokenizer running time: ' + (endTime - startTime) + " milliseconds")
-        }
-    
-        return mergedTokenIds
+
+        return output
     }
 
-    decode(tokenIds, add_bos_token=true, add_preceding_space=true) {
+    decode(tokenIds) {
         const utf8byteVals = []
-        const startIndex = add_bos_token ? 1 : 0
-        for (let i=startIndex; i<tokenIds.length; i++) {
+        for (let i=0; i<tokenIds.length; i++) {
             const tokenId = tokenIds[i]
             const tokenString = this.vocabById[tokenId]
-            if (tokenString.startsWith("<0x") && tokenString.endsWith(">")) {
-                // Special case
-                const utf8byte = hexToUtf8Byte(tokenString)
-                utf8byteVals.push(utf8byte)
-            } else {
-                // Typical case
-                const utf8bytes = this.utf8Encoder.encode(tokenString)
-                utf8bytes.forEach(utf8Byte => utf8byteVals.push(utf8Byte))
-            }
+            const utf8bytes = [...tokenString].map(c => UNICODE_TO_BYTES[c])
+            utf8bytes.forEach(utf8Byte => utf8byteVals.push(utf8Byte))
         }
-        const uint8Array = new Uint8Array(utf8byteVals)
-        const decodedString = this.utf8Decoder.decode(uint8Array)
-        const spacesFixed = decodedString.replaceAll(this.vocabById[29871], " ")
-        // Note that preceding space must be removed here at string level, not earlier at token level, because multiple consecutive spaces are represented as single token.
-        return add_preceding_space ? spacesFixed.slice(1) : spacesFixed
+        const byteArray = new Uint8Array(utf8byteVals);
+        return this.utf8Decoder.decode(byteArray);
     }
 
     defaultTests(tokenizer) {
 
+        let testNum = 0
+
         function isEqual(arr1, arr2) {
             return arr1.length === arr2.length && arr1.every(function(value, index) { return value === arr2[index]})
         }
-    
-        function testCase(inputString, expectedTokenIds) {
-            const actualTokens = tokenizer.encode(inputString, true, true, true)
+
+        function testEncode(inputString, expectedTokenIds, encoderOptions) {
+            let startTime = performance.now()
+            const actualTokens = tokenizer.encode(inputString, encoderOptions)
             if (!isEqual(actualTokens, expectedTokenIds)) {
-                throw `Test failed. LLaMA Tokenizer Encoder returned unexpected result: expected tokenize(${inputString}) === ${expectedTokenIds}, actual was: ${actualTokens}`
+                throw Error(`Encoder test failed: expected tokenize(${inputString}) === ${expectedTokenIds}, actual was: ${actualTokens}`)
             }
-            if (inputString !== tokenizer.decode(actualTokens)) {
-                throw `Test failed. LLaMA Tokenizer Decoder returned unexpected result: expected decode(${actualTokens}) === ${inputString}, actual was: ${decode(actualTokens)}`
+            console.log(`#${testNum++} test successful (encode test, running time ${Math.round(10 * (performance.now() - startTime)) / 10} ms)`)
+            return actualTokens
+        }
+
+        function testDecode(tokenIds, expectedString) {
+            let startTime = performance.now()
+            const actualString = tokenizer.decode(tokenIds)
+            if (actualString !== expectedString) {
+                throw Error(`Decoder test failed: expected decode(${tokenIds}) === ${expectedString}, actual was: ${actualString}`)
             }
+            console.log(`#${testNum++} test successful (decode test, running time ${Math.round(10 * (performance.now() - startTime)) / 10} ms)`)
+        }
+    
+        function testEncodeAndDecode(inputString, expectedTokenIds) {
+            const encoderOptions = {
+                bos: false,
+                eos: false
+            }
+            const actualTokens = testEncode(inputString, expectedTokenIds, encoderOptions)
+            testDecode(actualTokens, inputString)
         }
             
         // Simple test case
-        testCase("grabbed",                           [1, 2646,   1327,   287])
+        testEncodeAndDecode("grabbed",                           [59312, 2788])
     
-        // Naive implementation produces inconsistent tokenization for " grabbed", making this a good test case
-        testCase(" grabbed",                          [1, 29871,  2646,   1327,   287])
+        // Naive implementation produces inconsistent tokenization for " grabbed" (in LLAMA 1 TOKENIZER), making this a good test case (for LLAMA 1 TOKENIZER but probably not for LLAMA 3 TOKENIZER)
+        testEncodeAndDecode(" grabbed",                          [30418])
     
-        // Naive implementation uses incorrect merge order for multiple consecutive space merges, making this a good test case
-        testCase("           grabbed",                [1, 9651,   2646,   1327,   287])
+        // Naive implementation (in LLAMA 1 TOKENIZER) uses incorrect merge order for multiple consecutive space merges, making this a good test case (for LLAMA 1 TOKENIZER but probably not for LLAMA 3 TOKENIZER)
+        testEncodeAndDecode("           grabbed",                [1881, 30418])
     
-        // Linebreaks and tabs are handled as fallback to byte tokens
-        testCase("\n",                                [1, 29871,  13])
-        testCase(" \n",                               [1, 259,    13])
-        testCase("	tabs				out here",    [1, 29871,  12,     21175,  12,     12,     12,     12,     449,    1244])
+        // Linebreak and tab are handling
+        testEncodeAndDecode("\n",                                [198])
+        testEncodeAndDecode(" \n",                               [720])
+        testEncodeAndDecode("	tabs				out here",   [3324, 3518, 573, 14294, 1618])
     
-        // Equal prio merges are performed left-to-right (fixed in 1.1.1)
-        testCase("ax\n####\nboo",                     [1, 4853,   13,     4136,   13,     833,    29877])
+        // Equal prio merges are performed left-to-right (bug fixed in 1.1.1 of LLAMA 1 TOKENIZER, TODO: this test input should be updated so that this failure type would be tested properly in LLAMA 3 TOKENIZER)
+        testEncodeAndDecode("ax\n####\nboo",                     [710, 198, 71050, 34093])
     
         // UTF-8 multipoint character that should be found in vocabulary
-        testCase('镇',                                [1, 29871,  30411])
+        testEncodeAndDecode('镇',                                [104643])
     
-        // UTF-8 multipoint character that should NOT be found in vocabulary, fallback to MULTIPLE byte tokens
-        testCase('🦙',                               [1, 29871,  243,    162,    169,    156])
+        // UTF-8 multipoint character that should NOT be found in vocabulary
+        testEncodeAndDecode('🦙',                               [9468, 99, 247])
     
-        // Consecutive UTF-8 multipoint characters that are NOT found in a vocabulary and use DIFFERENT number of bytes
-        testCase('🦙Ꙋ',                              [1, 29871,  243,    162,    169,    156,    237,    156,    141])
-        testCase('Ꙋ🦙',                              [1, 29871,  237,    156,    141,    243,    162,    169,    156])
+        // Consecutive UTF-8 multipoint characters that are NOT found in a vocabulary and use different number of bytes
+        testEncodeAndDecode('🦙Ꙋ',                             [9468, 99, 247, 166, 247, 232])
+        testEncodeAndDecode('Ꙋ🦙',                             [166, 247, 232, 9468, 99, 247])
+
+        // Test input from official LLaMA 3 library
+        testEncodeAndDecode('This is a test sentence.',         [2028, 374, 264, 1296, 11914, 13])
     
         // Larger text input with various special characters sprinkled in
-        testCase("The llama (/ˈlɑːmə/; 🦙Spanish pronunciation: [ˈʎama]) (Lama glama) is a domesticated South American camelid, widely used as a meat and pack animal by Andean cultures since the Pre-Columbian era. Llamas are social animals and live with others as a herd. Their wool is soft and contains only a small amount of lanolin.[2] Llamas can learn simple tasks after a few repetitions. When using a pack, they can carry about 25 to 30% of their body weight for 8 to 13 km (5–8 miles).[3] The name llama (in the past also spelled \"lama\" or \"glama\") was adopted by European settlers from native Peruvians.[4] The ancestors of llamas are thought to have originated from the Great Plains of North America about 40 million years ago, and subsequently migrated to South America about three million years ago during the Great American Interchange. By the end of the last ice age (10,000–12,000 years ago), camelids were extinct in North America.[3] As of 2007, there were over seven million llamas and alpacas in South America and over 158,000 llamas and 100,000Ꙋ🦙 alpacas, descended from progenitors imported late in the 20th century, in the United States and Canada.[5] In Aymara mythology, llamas are important beings. The Heavenly Llama is said to drink water from the ocean and urinates as it rains.[6] According to Aymara eschatology, llamas will return to the water springs and lagoons where they come from at the end of time.[6]",
-        [1,   450, 11148,  3304, 20374, 30176, 29880, 30426, 30215, 29885,
-            30184, 29914, 29936, 29871,   243,   162,   169,   156, 15495,   728,
-            11504, 11173,   362, 29901,   518, 30176, 31743,  3304,  2314,   313,
-            29931,  3304,  3144,  3304, 29897,   338,   263, 21849,   630,  4275,
-            3082,  3949,   295,   333, 29892, 17644,  1304,   408,   263, 27654,
-            322,  4870, 13019,   491,  1126, 29872,   273,  4185,  1973,  1951,
-            278,  4721, 29899,  1625,  3774,   713,  3152, 29889,   365,  5288,
-            294,   526,  5264, 15006,   322,  5735,   411,  4045,   408,   263,
-            902, 29881, 29889, 11275,   281,  1507,   338,  4964,   322,  3743,
-            871,   263,  2319,  5253,   310, 10906, 22878,  7226, 29906, 29962,
-            365,  5288,   294,   508,  5110,  2560,  9595,  1156,   263,  2846,
-            21159,  2187, 29889,  1932,   773,   263,  4870, 29892,   896,   508,
-            8677,  1048, 29871, 29906, 29945,   304, 29871, 29941, 29900, 29995,
-            310,  1009,  3573,  7688,   363, 29871, 29947,   304, 29871, 29896,
-            29941,  2383,   313, 29945, 29994, 29947,  7800,   467, 29961, 29941,
-            29962,   450,  1024, 11148,  3304,   313,   262,   278,  4940,   884,
-            805, 14356,   376, 29880,  3304, 29908,   470,   376,  3820,  3304,
-            1159,   471, 16356,   491,  7824,  3604,  9306,   515,  7531, 25493,
-            1403,   550,  7226, 29946, 29962,   450, 19525,   943,   310, 11829,
-            294,   526,  2714,   304,   505,  3978,   630,   515,   278,  7027,
-            13494,  1144,   310,  4644,  6813,  1048, 29871, 29946, 29900,  7284,
-            2440,  8020, 29892,   322, 17602,  9725,   630,   304,  4275,  6813,
-            1048,  2211,  7284,  2440,  8020,  2645,   278,  7027,  3082,  4124,
-            3167, 29889,  2648,   278,  1095,   310,   278,  1833, 14890,  5046,
-            313, 29896, 29900, 29892, 29900, 29900, 29900, 29994, 29896, 29906,
-            29892, 29900, 29900, 29900,  2440,  8020,   511,  3949,   295,  4841,
-            892,  1294,  5562,   297,  4644,  6813,  7226, 29941, 29962,  1094,
-            310, 29871, 29906, 29900, 29900, 29955, 29892,   727,   892,   975,
-            9881,  7284, 11829,   294,   322,   394, 29886,   562,   294,   297,
-            4275,  6813,   322,   975, 29871, 29896, 29945, 29947, 29892, 29900,
-            29900, 29900, 11829,   294,   322, 29871, 29896, 29900, 29900, 29892,
-            29900, 29900, 29900,   237,   156,   141,   243,   162,   169,   156,
-            394, 29886,   562,   294, 29892,  5153,  2760,   515,   410,  1885,
-            17259, 19673,  5683,   297,   278, 29871, 29906, 29900,   386,  6462,
-            29892,   297,   278,  3303,  3900,   322,  7400,  7226, 29945, 29962,
-            512,   319,   962,  2518, 22082,  3002, 29892, 11829,   294,   526,
-            4100,   367,   886, 29889,   450, 22977,   368,   365, 29880,  3304,
-            338,  1497,   304, 13748,  4094,   515,   278, 23474,   322,  5065,
-            262,  1078,   408,   372,  1153,  1144,  7226, 29953, 29962,  7579,
-            304,   319,   962,  2518,   831, 13496,  3002, 29892, 11829,   294,
-            674,   736,   304,   278,  4094,  7689,   886,   322,   301,  4425,
-            787,   988,   896,  2041,   515,   472,   278,  1095,   310,   931,
-            7226, 29953, 29962])
+        testEncodeAndDecode("The llama (/ˈlɑːmə/; 🦙Spanish pronunciation: [ˈʎama]) (Lama glama) is a domesticated South American camelid, widely used as a meat and pack animal by Andean cultures since the Pre-Columbian era. Llamas are social animals and live with others as a herd. Their wool is soft and contains only a small amount of lanolin.[2] Llamas can learn simple tasks after a few repetitions. When using a pack, they can carry about 25 to 30% of their body weight for 8 to 13 km (5–8 miles).[3] The name llama (in the past also spelled \"lama\" or \"glama\") was adopted by European settlers from native Peruvians.[4] The ancestors of llamas are thought to have originated from the Great Plains of North America about 40 million years ago, and subsequently migrated to South America about three million years ago during the Great American Interchange. By the end of the last ice age (10,000–12,000 years ago), camelids were extinct in North America.[3] As of 2007, there were over seven million llamas and alpacas in South America and over 158,000 llamas and 100,000Ꙋ🦙 alpacas, descended from progenitors imported late in the 20th century, in the United States and Canada.[5] In Aymara mythology, llamas are important beings. The Heavenly Llama is said to drink water from the ocean and urinates as it rains.[6] According to Aymara eschatology, llamas will return to the water springs and lagoons where they come from at the end of time.[6]",
+        [791, 94776, 47325, 135, 230, 75, 133, 239, 135, 238, 76, 99638, 14, 26, 11410, 99, 247, 62897, 71722, 25, 510, 135, 230, 134, 236, 3105, 2526, 320, 43, 3105, 2840, 3105, 8, 374, 264, 13018, 660, 4987, 3778, 50252, 307, 11, 13882, 1511, 439, 264, 13339, 323, 3854, 10065, 555, 1628, 5420, 27833, 2533, 279, 5075, 7813, 1152, 13464, 11639, 13, 445, 24705, 300, 527, 3674, 10099, 323, 3974, 449, 3885, 439, 264, 59213, 13, 11205, 39640, 374, 8579, 323, 5727, 1193, 264, 2678, 3392, 315, 31791, 37737, 8032, 17, 60, 445, 24705, 300, 649, 4048, 4382, 9256, 1306, 264, 2478, 86066, 13, 3277, 1701, 264, 3854, 11, 814, 649, 6920, 922, 220, 914, 311, 220, 966, 4, 315, 872, 2547, 4785, 369, 220, 23, 311, 220, 1032, 13437, 320, 20, 4235, 23, 8931, 94638, 18, 60, 578, 836, 94776, 320, 258, 279, 3347, 1101, 68918, 330, 81101, 1, 477, 330, 6200, 3105, 909, 574, 18306, 555, 7665, 61107, 505, 10068, 3700, 12328, 5493, 8032, 19, 60, 578, 38618, 315, 9507, 29189, 527, 3463, 311, 617, 44853, 505, 279, 8681, 63911, 315, 4892, 5270, 922, 220, 1272, 3610, 1667, 4227, 11, 323, 28520, 73691, 311, 4987, 5270, 922, 2380, 3610, 1667, 4227, 2391, 279, 8681, 3778, 5783, 3455, 13, 3296, 279, 842, 315, 279, 1566, 10054, 4325, 320, 605, 11, 931, 4235, 717, 11, 931, 1667, 4227, 705, 50252, 3447, 1051, 69918, 304, 4892, 5270, 8032, 18, 60, 1666, 315, 220, 1049, 22, 11, 1070, 1051, 927, 8254, 3610, 9507, 29189, 323, 453, 46051, 300, 304, 4987, 5270, 323, 927, 220, 11286, 11, 931, 9507, 29189, 323, 220, 1041, 11, 931, 166, 247, 232, 9468, 99, 247, 453, 46051, 300, 11, 58842, 505, 84360, 12170, 25973, 3389, 304, 279, 220, 508, 339, 9478, 11, 304, 279, 3723, 4273, 323, 7008, 8032, 20, 60, 763, 362, 1631, 5169, 59492, 11, 9507, 29189, 527, 3062, 23837, 13, 578, 88150, 445, 81101, 374, 1071, 311, 7172, 3090, 505, 279, 18435, 323, 4433, 258, 988, 439, 433, 62555, 8032, 21, 60, 10771, 311, 362, 1631, 5169, 1560, 9884, 2508, 11, 9507, 29189, 690, 471, 311, 279, 3090, 42242, 323, 326, 6438, 2439, 1405, 814, 2586, 505, 520, 279, 842, 315, 892, 8032, 21, 60])
+
+        // Encoder options test
+        testEncode("I", [128000, 40, 128001], { bos: true, eos: true })
+        testEncode("I", [128000, 40],         { bos: true, eos: false })
+        testEncode("I", [40, 128001],         { bos: false, eos: true })
+        testEncode("I", [40],                 { bos: false, eos: false })
+
+        // Empty input with encoder options
+        testEncode("", [128000, 128001],      { bos: true, eos: true })
+
+        // Default encoder options: bos true and eos true
+        testEncode("I", [128000, 40, 128001])
+
+        // Special tokens
+        testDecode([128000], '<|begin_of_text|>')
+        testDecode([128006], '<|start_header_id|>')
+        testDecode([128255], '<|reserved_special_token_250|>')
+        testDecode([128000, 2028, 374, 264, 1296, 11914, 13, 128001], "<|begin_of_text|>This is a test sentence.<|end_of_text|>") // Test from official LLaMA 3 library
     
-        console.log('LLaMA Tokenizer tests passed successfully.')
+        console.log('LLaMA 3 Tokenizer tests passed successfully.')
         return true
     }
 
