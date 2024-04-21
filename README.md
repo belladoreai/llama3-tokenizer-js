@@ -1,78 +1,83 @@
-# 🦙 llama-tokenizer-js 🦙
+# 🦙 llama3-tokenizer-js 🦙
 
-JavaScript tokenizer for LLaMA which works client-side in the browser (and also in Node).
+JavaScript tokenizer for LLaMA 3 which works client-side in the browser (and also in Node) (now also with TypeScript support).
 
 Intended use case is calculating token count accurately on the client-side.
 
-<a href="https://belladoreai.github.io/llama-tokenizer-js/example-demo/build/">Click here for demo</a>
-
-Developed by [belladore.ai](https://belladore.ai) with contributions from [xenova](https://github.com/xenova), [blaze2004](https://github.com/blaze2004), [imoneoi](https://github.com/imoneoi) and [ConProgramming](https://github.com/ConProgramming).
+<a href="https://belladoreai.github.io/llama3-tokenizer-js/example-demo/build/">Click here for demo</a>
 
 ## Features
 
 - Easy to use: 0 dependencies, code and data baked into a [single file](llama-tokenizer.js).
-- Compatible with most LLaMA models (see [Compatibility](#compatibility))
-- Optimized running time: tokenize a sentence in roughly 1ms, or 2000 tokens in roughly 20ms.
-- Optimized bundle size: 670KiB before minification and gzipping (the heaviest part of the tokenizer, merge data, has been compressed into a simple and efficient binary format, and then base64-encoded to bake it into the .js file)
+- Compatible with most LLaMA 3 models (see [Compatibility](#compatibility))
+- Optimized running time (highly efficient BPE implementation)
+- Somewhat optimized bundle size, though it's still ugly (data is written in a custom format where it takes up 3MB before minification and gzipping, which is ugly, yes, but still better than the original 9MB raw json data file)
 
 ## Import
 
 Recommended way: Install as an npm package and import as ES6 module
 
 ```
-npm install llama-tokenizer-js
+npm install llama3-tokenizer-js
 ```
 
 ```
-import llamaTokenizer from 'llama-tokenizer-js'
+import llama3Tokenizer from 'llama3-tokenizer-js'
 
-console.log(llamaTokenizer.encode("Hello world!").length)
-```
-
-Alternative: Load as ES6 module with `<script>` tags in your HTML
-
-```
-<script type="module" src="https://belladoreai.github.io/llama-tokenizer-js/llama-tokenizer.js"></script>
+console.log(llama3Tokenizer.encode("Hello world!").length)
 ```
 
 Alternative: for CommonJS projects this should work:
 
 ```
 async function main() {
-    const llamaTokenizer=await import('llama-tokenizer-js')
-    console.log(llamaTokenizer.default.encode("Hello world!"))
+    const llama3Tokenizer = await import('llama3-tokenizer-js')
+    console.log(llama3Tokenizer.default.encode("Hello world!").length)
 }
 
 main();
 ```
 
-TypeScript support has been added (please file an issue if there are still TypeScript problems with this).
-
 ## Usage
 
 Once you have the module imported, you can encode or decode with it. Training is not supported.
 
-When used in browser, llama-tokenizer-js pollutes global namespace with `llamaTokenizer`.
+When used in browser, llama3-tokenizer-js pollutes global namespace with `llama3Tokenizer`.
 
 Encode:
 
 ```
-llamaTokenizer.encode("Hello world!")
-> [1, 15043, 3186, 29991]
+llama3Tokenizer.encode("Hello world!")
+> [128000, 9906, 1917, 0, 128001]
 ```
 
 Decode:
 
 ```
-llamaTokenizer.decode([1, 15043, 3186, 29991])
-> 'Hello world!'
+llama3Tokenizer.decode([128000, 9906, 1917, 0, 128001])
+> '<|begin_of_text|>Hello world!<|end_of_text|>'
 ```
 
-Note that special "beginning of sentence" token and preceding space are added by default when encoded (and correspondingly expected when decoding). These affect token count. There may be some use cases where you don't want to add these. You can pass additional boolean parameters in these use cases. For example, if you want to decode an individual token:
+Note the special tokens in the beginning and end. These affect token count. You can pass an options object if you don't want to add these:
 
 ```
-llamaTokenizer.decode([3186], false, false)
-> 'Hello'
+llama3Tokenizer.encode("Hello world!", { bos: false, eos: false })
+> [9906, 1917, 0]
+```
+
+Note that, contrary to LLaMA 1 tokenizer, the LLaMA 3 tokenizer does not add a preceding space (please open an issue if there are circumstances in which a preceding space is still added).
+
+There are various special tokens in LLaMA 3 tokenizer. Looks like (some of these might be needed when working with the instruct fine tunes)[https://github.com/meta-llama/llama3/blob/main/llama/tokenizer.py#L202-L229]. I have added a `getSpecialTokenId` convenience function. Example usage:
+
+```
+const tokens = []
+tokens.push(llama3Tokenizer.getSpecialTokenId('<|begin_of_text|>'))
+tokens.push(llama3Tokenizer.getSpecialTokenId('<|start_header_id>'))
+tokens.push(llama3Tokenizer.encode(message["role"], { bos: false, eos: false }))
+tokens.push(llama3Tokenizer.getSpecialTokenId('<|end_header_id|>'))
+tokens.push(llama3Tokenizer.encode("\n\n", { bos: false, eos: false }))
+tokens.push(llama3Tokenizer.encode(message["content"], { bos: false, eos: false }))
+tokens.push(llama3Tokenizer.getSpecialTokenId('<|eot_id|>'))
 ```
 
 ## Tests
@@ -80,45 +85,32 @@ llamaTokenizer.decode([3186], false, false)
 You can run tests with:
 
 ```
-llamaTokenizer.runTests()
+llama3Tokenizer.runTests()
 ```
-
-The test suite is small, but it covers different edge cases very well.
 
 Note that tests can be run both in browser and in Node (this is necessary because some parts of the code work differently in different environments).
 
-## Comparison to alternatives
-
-llama-tokenizer-js is the first JavaScript tokenizer for LLaMA which works client-side in the browser. You might be wondering, what other solutions are people using to count tokens in web applications?
-
-- Many web applications currently use client-side JavaScript libraries for other, _incompatible_ tokenizers. In particular, OpenAI's tokenizers are popular (see [tiktoken](https://www.npmjs.com/package/@dqbd/tiktoken) and [gpt-tokenizer](https://www.npmjs.com/package/gpt-tokenizer)). It's not entirely clear to me why people using LLaMA would want to count tokens with an OpenAI tokenizer that is not compatible with LLaMA. I guess people are assuming that there's not much difference between tokenizers? However, in my own testing I discovered that the token counts will commonly differ by as much as 20% between these tokenizers. So you can get a _very rough_ approximation of LLaMA token count by using an OpenAI tokenizer.
-- Some web applications make network calls to Python applications that run the Huggingface transformers tokenizer. For example, the oobabooga-text-webui exposes an API endpoint for token count. The drawback of this approach is latency: although the Python tokenizer itself is very fast, oobabooga adds a lot of overhead. In my testing, making a network call to locally running oobabooga to count tokens for short Strings of text took roughly 300ms (compared to ~1ms when counting tokens client-side with llama-tokenizer-js). The latency will be even higher when a real web client is making requests over the internet. The latency issue is even worse if an application needs to iteratively trim down a prompt to get it to fit within a context limit, requiring multiple network calls.
-- Since releasing llama-tokenizer-js, alternative llama tokenizers have been released. One notable example is [transformers.js](https://github.com/xenova/transformers.js), which actually introduced a llama tokenizer by [integrating llama-tokenizer-js into transformers.js](https://github.com/belladoreai/llama-tokenizer-js/issues/9).
-
 ## Compatibility
 
-The tokenizer used by LLaMA is a SentencePiece Byte-Pair Encoding tokenizer.
+This tokenizer is compatible with all models which have been trained on top of checkpoints released by Facebook in April 2024 ("LLaMA 3").
 
-Note that this is a tokenizer for LLaMA models, and it's different than the tokenizers used by OpenAI models. If you need a tokenizer for OpenAI models, I recommend [gpt-tokenizer](https://www.npmjs.com/package/gpt-tokenizer).
+What this means in practice:
+- ✅ LLaMA 3 models released by Facebook: yes, they are compatible
+- ✅ New LLaMA 3 based fine tune by somebody other than Facebook: yes, it's compatible
+- ❌ New LLaMA 3 model trained from scratch by somebody other than Facebook: probably not compatible, depends if they also retrained the tokenizer
+- ❌ LLaMA 1 or LLaMA 2 based models: no, not compatible (use [llama-tokenizer-js](https://github.com/belladoreai/llama-tokenizer-js) instead)
+- ❌ OpenAI models: no, not compatible
+- ❌ Mistral models: no, not compatible
 
-What is this tokenizer compatible with? All LLaMA models which have been trained on top of checkpoints (model weights) released by Facebook in March 2023 ("LLaMA") and July of 2023 ("LLaMA2").
+If you are unsure about compatibility, try it and see if the token ids are the same (compared to running the model with, for example, the transformers library).
 
-Examples of compatible models:
-- llama2-13b-4bit-gptq
-- wizard-vicuna-13b-uncensored-gptq
-- manticore-7b-ggml
-
-Incompatible LLaMA models are those which have been trained from scratch, not on top of the checkpoints released by Facebook. For example, [OpenLLaMA](https://github.com/openlm-research/open_llama) models are incompatible.
-
-When you see a new LLaMA model released, this tokenizer is mostly likely compatible with it without any modifications. If you are unsure, try it and see if the token ids are the same (compared to running the model with, for example, oobabooga webui). You can find great test input/output samples by searching for `runTests` inside `llama-tokenizer.js`.
-
-If you want to modify this library to support a new LLaMA tokenizer (new as in trained from scratch, not using the same tokenizer as most LLaMA models do), you should be able to do so by swapping the vocabulary and merge data (the 2 long variables near the end of `llama-tokenizer.js` file). This repo has [a Python script](data-conversion.py) for your convenience.
+The vocab and merge data were converted with [this script](data-conversion.py).
 
 You can pass custom vocab and merge data to the tokenizer by instantiating it like this:
 
 ```
-import { LlamaTokenizer } from 'llama-tokenizer-js'
-const tokenizer = new LlamaTokenizer(custom_vocab, custom_merge_data);
+import { Llama3Tokenizer } from 'llama3-tokenizer-js'
+const tokenizer = new Llama3Tokenizer(custom_vocab, custom_merge_data);
 ```
 
 ## Repo maintenance
@@ -136,3 +128,9 @@ Release steps:
 9. cd example-demo && npm run build && live-server
 10. push example demo changes to github
 11. create release in github
+
+## Who did this
+
+LLaMA3-tokenizer-js is a fork of [llama-tokenizer-js](https://github.com/belladoreai/llama-tokenizer-js).
+
+Developed by [belladore.ai](https://belladore.ai) with contributions from [xenova](https://github.com/xenova), [blaze2004](https://github.com/blaze2004), [imoneoi](https://github.com/imoneoi) and [ConProgramming](https://github.com/ConProgramming).
