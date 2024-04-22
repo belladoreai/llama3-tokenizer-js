@@ -60,12 +60,7 @@ const App = () => {
   const encodedTokens = llama3Tokenizer.encode(inputText);
 
   const decodedTokens = encodedTokens.map(token => {
-    const chars = llama3Tokenizer.decode([token], false, false)
-    if (token === 0) return "<unk>"
-    if (token === 1) return "<s>"
-    if (token === 2) return "</s>"
-    if (token >= 3 && token <= 258) return llama3Tokenizer.vocabById[token]
-    return chars
+    return llama3Tokenizer.decode([token], { bos: false, eos: false })
   })
 
   return (
