@@ -57,10 +57,10 @@ const App = () => {
     "Replace this text in the input field to see how 🦙 tokenization works.",
   )
 
-  const encodedTokens = llama3Tokenizer.encode(inputText);
+  const encodedTokens = llama3Tokenizer.encode(inputText, { bos: false, eos: false });
 
   const decodedTokens = encodedTokens.map(token => {
-    return llama3Tokenizer.decode([token], { bos: false, eos: false })
+    return llama3Tokenizer.decode([token])
   })
 
   return (
