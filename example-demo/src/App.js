@@ -13,7 +13,7 @@ const pastelColors = [
 
 const monospace = `"Roboto Mono",sfmono-regular,consolas,liberation mono,menlo,courier,monospace`;
 
-const TokenizedText = ({ tokens }) => (
+const TokenizedText = ({ tokenStrings }) => (
   <div
     style={{
       display: "flex",
@@ -29,7 +29,7 @@ const TokenizedText = ({ tokens }) => (
       alignContent: "flex-start",
     }}
   >
-    {tokens.map((token, index) => (
+    {tokenStrings.map((tokenString, index) => (
       <span
         key={index}
         style={{
@@ -44,11 +44,52 @@ const TokenizedText = ({ tokens }) => (
       >
         {
           <pre>
-            {String(token).replaceAll(" ", "\u00A0")}
+            {tokenString.replaceAll(" ", "\u00A0").replaceAll("\n", "\\n")}
           </pre>
         }
       </span>
     ))}
+  </div>
+);
+
+const TokenIds = ({ tokenIds }) => (
+  <div
+    style={{
+      display: "flex",
+      flexWrap: "wrap",
+      fontFamily: monospace,
+      width: "100%",
+      height: "200px",
+      overflowY: "auto",
+      padding: "8px",
+      border: "1px solid #ccc",
+      backgroundColor: "#f8f8f8",
+      lineHeight: "1.5",
+      alignContent: "flex-start",
+    }}
+  >
+    [
+    {tokenIds.map((tokenId, index) => (
+      <span
+        key={index}
+        style={{
+          backgroundColor: pastelColors[index % pastelColors.length],
+          padding: "0 0px",
+          borderRadius: "3px",
+          marginRight: "0px",
+          marginBottom: "4px",
+          display: "inline-block",
+          height: "1.5em",
+        }}
+      >
+        {
+          <pre>
+            {`${tokenId}, `}
+          </pre>
+        }
+      </span>
+    ))}
+    ]
   </div>
 );
 
@@ -81,7 +122,8 @@ const App = () => {
           />
         </div>
 
-        <TokenizedText tokens={decodedTokens} />
+        <TokenizedText tokenStrings={decodedTokens} />
+        <TokenIds tokenIds={encodedTokens} />
 
         <div className="statistics">
           <div className="stat">
