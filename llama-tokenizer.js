@@ -332,20 +332,6 @@ export class Llama3Tokenizer {
             return
         }
 
-        // Output array of tokenIds will be filled and returned in this encode function.
-        const output = []
-
-        // Special "beginning of string" token.
-        if (options.bos) {
-            output.push(this.getSpecialTokenId("<|begin_of_text|>"))
-        }
-
-        // Pretokenizer sequence step 1: SplitPretokenizer
-        const splittedPrompt = regexSplit(prompt, CLEAN_LLAMA3_REGEX_STRING)
-
-        // Pretokenizer sequence step 2: ByteLevelPretokenizer maps all our bytes to unicode strings, this also does the mapping from space to Ġ (charCode 32 -> 32+256)
-        const bytemappedSplit = splittedPrompt.map(pretoken => Array.from(this.utf8Encoder.encode(pretoken), byte => BYTES_TO_UNICODE[byte]).join(''))
-
         // Set up priority queue to efficiently iterate merge possibilities in priority order
         const mergeQueue = new PriorityQueue((a, b) => {
             return a.mergePrio < b.mergePrio
@@ -365,131 +351,164 @@ export class Llama3Tokenizer {
             }
         }
 
-        // The results from pretokenizer are handled one by one
+        // Pretoken level cache
         const cache = new Map()
-        for (let pretokenIndex=0; pretokenIndex<bytemappedSplit.length; pretokenIndex++) {
-            const pretoken = bytemappedSplit[pretokenIndex]
 
-            // Because LLaMA 3 tokenizer is configured with ignore_merges,
-            // we check if the pretoken is found in our vocabulary,
-            // and if it is, we map it to tokenId directly from vocabulary
-            // (instead of normal BPE processing, like in LLaMA 1 tokenizer,
-            // where the BPE process sometimes leads to different tokens).
-            if (this.vocabByString.has(pretoken)) {
-                output.push(this.vocabByString.get(pretoken))
-                continue
-            }
+        // Output array of tokenIds will be filled and returned in this encode function.
+        const output = []
 
-            // Pretoken was not found from vocabulary, so we proceed with normal BPE processing,
-            // which will result in a sequence of at least 2 tokens that represent the pretoken.
+        // Special "beginning of string" token.
+        if (options.bos) {
+            output.push(this.getSpecialTokenId("<|begin_of_text|>"))
+        }
 
-            // Cache used for performance
-            if (cache.has(pretoken)) {
-                output.push(...(cache.get(pretoken)))
-                continue
-            }
+        // Split prompt by special tokens, e.g. <|eot_id|>
+        const regexSpecialToken = /<\|(?:begin_of_text|end_of_text|start_header_id|end_header_id|eot_id|reserved_special_token_(?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|250))\|>/g
+        const splittedBySpecialTokens = regexSplit(prompt, regexSpecialToken)
+        for (let specialSplitIndex=0; specialSplitIndex<splittedBySpecialTokens.length; specialSplitIndex++) {
+            const specialSplitString = splittedBySpecialTokens[specialSplitIndex]
+            if (specialSplitString.match(regexSpecialToken) && this.vocabByString.has(specialSplitString)) {
+                // If this string is a special token according to our regex AND is found from vocabulary, output the corresponding special token id.
+                output.push(this.vocabByString.get(specialSplitString))
+            } else if (specialSplitString.match(regexSpecialToken)) {
+                // If this string is a special token according to our regex BUT is not found from vocabulary, there is a mismatch between our regex
+                // and our vocabulary. The input has been incorrectly split and we cannot guarantee correctness if we continued, so we throw an error.
+                throw new Error('Internal error occurred in llama3-tokenizer-js while processing special tokens in input.')
+            } else {
+                // Else treat this string like normal text
 
-            // Initially each character is transformed to a tokenId, later there will be merges of these.
-            // Note that this array represents the tokenIds of the pretoken, not the entire sequence (there are typically multiple pretokens).
-            const tokenIds = []
+                // SplitPretokenizer
+                const splittedByPretokenizer = regexSplit(specialSplitString, CLEAN_LLAMA3_REGEX_STRING)
 
-            // Transform each character to its corresponding token
-            const charArray = Array.from(pretoken)
-            for (let i=0; i<charArray.length; i++) {
-                const c = charArray[i]
-                if (!this.vocabByString.has(c)) {
-                    throw Error(`Character ${c} not found from vocabulary. This is not supposed to happen (vocab is supposed to cover everything that comes out of pretokenization).`)
-                }
-                tokenIds.push(this.vocabByString.get(c))
-            }
+                // ByteLevelPretokenizer maps all our bytes to unicode strings, this also does the mapping from space to Ġ (charCode 32 -> 32+256)
+                const bytemappedSplit = splittedByPretokenizer.map(pretoken => Array.from(this.utf8Encoder.encode(pretoken), byte => BYTES_TO_UNICODE[byte]).join(''))
 
-            // Fill merge queue from initial merge possibilities and construct linked list
-            let firstTokenNode = {
-                origPos: 0,
-                tokenId: tokenIds[0],
-                prev: null,
-                next: null,
-            }
-            let prevTokenNode = firstTokenNode
-            for (let i=1; i<tokenIds.length; i++) {
-                const currTokenNode = {
-                    origPos: i,
-                    tokenId: tokenIds[i],
-                    prev: prevTokenNode,
-                    next: null
-                }
-                prevTokenNode.next = currTokenNode
-                addToMergeQueue(prevTokenNode)
-                prevTokenNode = currTokenNode
-            }
-        
-            // Perform merges in priority order
-            while (!mergeQueue.isEmpty()) {
-                const leftOfMerge = mergeQueue.pop()
-                // Check that this merge is still possible
-                if (leftOfMerge.deleted) continue
-                if (!leftOfMerge.next) continue
-                if (leftOfMerge.next.deleted) continue
+                // The results from pretokenizer are handled one by one
+                for (let pretokenIndex=0; pretokenIndex<bytemappedSplit.length; pretokenIndex++) {
+                    const pretoken = bytemappedSplit[pretokenIndex]
+
+                    // Because LLaMA 3 tokenizer is configured with ignore_merges,
+                    // we check if the pretoken is found in our vocabulary,
+                    // and if it is, we map it to tokenId directly from vocabulary
+                    // (instead of normal BPE processing, like in LLaMA 1 tokenizer,
+                    // where the BPE process sometimes leads to different tokens).
+                    if (this.vocabByString.has(pretoken)) {
+                        output.push(this.vocabByString.get(pretoken))
+                        continue
+                    }
+
+                    // Pretoken was not found from vocabulary, so we proceed with normal BPE processing,
+                    // which will result in a sequence of at least 2 tokens that represent the pretoken.
+
+                    // Cache used for performance
+                    if (cache.has(pretoken)) {
+                        output.push(...(cache.get(pretoken)))
+                        continue
+                    }
+
+                    // Initially each character is transformed to a tokenId, later there will be merges of these.
+                    // Note that this array represents the tokenIds of the pretoken, not the entire sequence (there are typically multiple pretokens).
+                    const tokenIds = []
+
+                    // Transform each character to its corresponding token
+                    const charArray = Array.from(pretoken)
+                    for (let i=0; i<charArray.length; i++) {
+                        const c = charArray[i]
+                        if (!this.vocabByString.has(c)) {
+                            throw Error(`Character ${c} not found from vocabulary. This is not supposed to happen (vocab is supposed to cover everything that comes out of pretokenization).`)
+                        }
+                        tokenIds.push(this.vocabByString.get(c))
+                    }
+
+                    // Fill merge queue from initial merge possibilities and construct linked list
+                    let firstTokenNode = {
+                        origPos: 0,
+                        tokenId: tokenIds[0],
+                        prev: null,
+                        next: null,
+                    }
+                    let prevTokenNode = firstTokenNode
+                    for (let i=1; i<tokenIds.length; i++) {
+                        const currTokenNode = {
+                            origPos: i,
+                            tokenId: tokenIds[i],
+                            prev: prevTokenNode,
+                            next: null
+                        }
+                        prevTokenNode.next = currTokenNode
+                        addToMergeQueue(prevTokenNode)
+                        prevTokenNode = currTokenNode
+                    }
                 
-                // Mark leftOfMerge and rightOfMerge as being deleted, because they are actually being replaced by a merged token.
-                leftOfMerge.deleted = true
-                leftOfMerge.next.deleted = true
-                // It's a little bit more complicated to fix the prev of leftOfMerge.
-                if (leftOfMerge.prev) {
-                    const oldPrev = leftOfMerge.prev
-                    // Mark oldPrev as deleted, to avoid erroneous merges later (ref to this node might exist in priorityqueue)
-                    oldPrev.deleted = true
-                    // Replace oldPrev within the linked list with a copy of itself
-                    const newPrev = {
-                        origPos: oldPrev.origPos,
-                        tokenId: oldPrev.tokenId,
-                        prev: oldPrev.prev,
-                        next: oldPrev.next
+                    // Perform merges in priority order
+                    while (!mergeQueue.isEmpty()) {
+                        const leftOfMerge = mergeQueue.pop()
+                        // Check that this merge is still possible
+                        if (leftOfMerge.deleted) continue
+                        if (!leftOfMerge.next) continue
+                        if (leftOfMerge.next.deleted) continue
+                        
+                        // Mark leftOfMerge and rightOfMerge as being deleted, because they are actually being replaced by a merged token.
+                        leftOfMerge.deleted = true
+                        leftOfMerge.next.deleted = true
+                        // It's a little bit more complicated to fix the prev of leftOfMerge.
+                        if (leftOfMerge.prev) {
+                            const oldPrev = leftOfMerge.prev
+                            // Mark oldPrev as deleted, to avoid erroneous merges later (ref to this node might exist in priorityqueue)
+                            oldPrev.deleted = true
+                            // Replace oldPrev within the linked list with a copy of itself
+                            const newPrev = {
+                                origPos: oldPrev.origPos,
+                                tokenId: oldPrev.tokenId,
+                                prev: oldPrev.prev,
+                                next: oldPrev.next
+                            }
+                            leftOfMerge.prev = newPrev
+                            // Update linked list reference of "prev of prev"
+                            if (newPrev.prev) {
+                                newPrev.prev.next = newPrev
+                            } else {
+                                // If "prev of prev" does not exist, that means newPrev must be the new firstNode
+                                firstTokenNode = newPrev
+                            }
+                        }
+                        // Create node representing merge result
+                        const resultOfMerge = {
+                            origPos: leftOfMerge.origPos,
+                            tokenId: this.vocabByString.get(leftOfMerge.mergeToString),
+                            prev: leftOfMerge.prev,
+                            next: leftOfMerge.next.next
+                        }
+                        // Consider adding to merge queue: prev--resultOfMerge
+                        if (resultOfMerge.prev) {
+                            resultOfMerge.prev.next = resultOfMerge
+                            resultOfMerge.prev
+                            addToMergeQueue(resultOfMerge.prev)
+                        } else {
+                            // If prev does not exist then this is the new firstNode
+                            firstTokenNode = resultOfMerge
+                        }
+                        // Consider adding to merge queue: resultOfMerge--next
+                        if (resultOfMerge.next) {
+                            resultOfMerge.next.prev = resultOfMerge
+                            addToMergeQueue(resultOfMerge)
+                        }
+                
                     }
-                    leftOfMerge.prev = newPrev
-                    // Update linked list reference of "prev of prev"
-                    if (newPrev.prev) {
-                        newPrev.prev.next = newPrev
-                    } else {
-                        // If "prev of prev" does not exist, that means newPrev must be the new firstNode
-                        firstTokenNode = newPrev
+                
+                    // Get final tokenIds for this pretoken by traversing the linked list
+                    const mergedTokenIds = []
+                    for (let currTokenNode = firstTokenNode; currTokenNode !== null; currTokenNode = currTokenNode.next) {
+                        mergedTokenIds.push(currTokenNode.tokenId)
                     }
-                }
-                // Create node representing merge result
-                const resultOfMerge = {
-                    origPos: leftOfMerge.origPos,
-                    tokenId: this.vocabByString.get(leftOfMerge.mergeToString),
-                    prev: leftOfMerge.prev,
-                    next: leftOfMerge.next.next
-                }
-                // Consider adding to merge queue: prev--resultOfMerge
-                if (resultOfMerge.prev) {
-                    resultOfMerge.prev.next = resultOfMerge
-                    resultOfMerge.prev
-                    addToMergeQueue(resultOfMerge.prev)
-                } else {
-                    // If prev does not exist then this is the new firstNode
-                    firstTokenNode = resultOfMerge
-                }
-                // Consider adding to merge queue: resultOfMerge--next
-                if (resultOfMerge.next) {
-                    resultOfMerge.next.prev = resultOfMerge
-                    addToMergeQueue(resultOfMerge)
-                }
-        
-            }
-        
-            // Get final tokenIds for this pretoken by traversing the linked list
-            const mergedTokenIds = []
-            for (let currTokenNode = firstTokenNode; currTokenNode !== null; currTokenNode = currTokenNode.next) {
-                mergedTokenIds.push(currTokenNode.tokenId)
-            }
 
-            // Add to cache
-            cache.set(pretoken, mergedTokenIds)
-        
-            // Add to output the tokenIds that correspond to this pretoken
-            output.push(...mergedTokenIds)
+                    // Add to cache
+                    cache.set(pretoken, mergedTokenIds)
+                
+                    // Add to output the tokenIds that correspond to this pretoken
+                    output.push(...mergedTokenIds)
+                }
+            }
         }
 
         // Special "end of string" token.
@@ -595,10 +614,36 @@ export class Llama3Tokenizer {
         testEncode("I", [128000, 40, 128001])
 
         // Special tokens
+        testEncodeAndDecode('<|start_header_id|>This text has special tokens<|reserved_special_token_4|> in the middle of it.<|end_header_id|><|eot_id|>', [128006, 2028, 1495, 706, 3361, 11460, 128008, 304, 279, 6278, 315, 433, 13, 128007, 128009])
         testDecode([128000], '<|begin_of_text|>')
         testDecode([128006], '<|start_header_id|>')
         testDecode([128255], '<|reserved_special_token_250|>')
         testDecode([128000, 2028, 374, 264, 1296, 11914, 13, 128001], "<|begin_of_text|>This is a test sentence.<|end_of_text|>") // Test from official LLaMA 3 library
+
+        // Test for regex errors in the regex that is used to split input by special tokens, it has complicated regex to validate that reserved special tokens only go from 0 to 250
+        testEncodeAndDecode([
+            // These are real special tokens
+            '<|reserved_special_token_0|>',
+            '<|reserved_special_token_9|>',
+            '<|reserved_special_token_10|>',
+            '<|reserved_special_token_19|>',
+            '<|reserved_special_token_53|>',
+            '<|reserved_special_token_99|>',
+            '<|reserved_special_token_100|>',
+            '<|reserved_special_token_178|>',
+            '<|reserved_special_token_199|>',
+            '<|reserved_special_token_200|>',
+            '<|reserved_special_token_249|>',
+            '<|reserved_special_token_250|>',
+            // These are not real special tokens and should be processed as normal text
+            '<|reserved_special_token_00|>',
+            '<|reserved_special_token_09|>',
+            '<|reserved_special_token_010|>',
+            '<|reserved_special_token_251|>',
+            '<|reserved_special_token_666|>',
+        ].join(""),
+        [128002, 128014, 128015, 128024, 128058, 128104, 128105, 128183, 128204, 128205, 128254, 128255, 27, 91, 52202, 42729, 6594, 62, 410, 91, 1822, 91, 52202, 42729, 6594, 62, 2545, 91, 1822, 91, 52202, 42729, 6594, 62, 7755, 91, 1822, 91, 52202, 42729, 6594, 62, 13860, 91, 1822, 91, 52202, 42729, 6594, 62, 10943, 91, 29])
+        
     
         console.log('LLaMA 3 Tokenizer tests passed successfully.')
         return true

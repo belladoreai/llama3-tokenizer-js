@@ -67,19 +67,6 @@ llama3Tokenizer.encode("Hello world!", { bos: false, eos: false })
 
 Note that, contrary to LLaMA 1 tokenizer, the LLaMA 3 tokenizer does not add a preceding space (please open an issue if there are circumstances in which a preceding space is still added).
 
-There are various special tokens in LLaMA 3 tokenizer. Looks like [some of these might be needed when working with the instruct fine tunes](https://github.com/meta-llama/llama3/blob/main/llama/tokenizer.py#L202-L229). I have added a `getSpecialTokenId` convenience function. Example usage:
-
-```
-const tokens = []
-tokens.push(llama3Tokenizer.getSpecialTokenId('<|begin_of_text|>'))
-tokens.push(llama3Tokenizer.getSpecialTokenId('<|start_header_id>'))
-tokens.push(llama3Tokenizer.encode(message["role"], { bos: false, eos: false }))
-tokens.push(llama3Tokenizer.getSpecialTokenId('<|end_header_id|>'))
-tokens.push(llama3Tokenizer.encode("\n\n", { bos: false, eos: false }))
-tokens.push(llama3Tokenizer.encode(message["content"], { bos: false, eos: false }))
-tokens.push(llama3Tokenizer.getSpecialTokenId('<|eot_id|>'))
-```
-
 ## Tests
 
 You can run tests with:
@@ -104,7 +91,7 @@ What this means in practice:
 
 If you are unsure about compatibility, try it and see if the token ids are the same (compared to running the model with, for example, the transformers library).
 
-The vocab and merge data were converted with [this script](data-conversion.py).
+If you want to make this library work with different tokenizer data, you may be interested in [this script](data-conversion.py) which was used to convert the data.
 
 You can pass custom vocab and merge data to the tokenizer by instantiating it like this:
 
@@ -113,12 +100,14 @@ import { Llama3Tokenizer } from 'llama3-tokenizer-js'
 const tokenizer = new Llama3Tokenizer(custom_vocab, custom_merge_data);
 ```
 
+Please note that if you try to adapt this library to work for a different tokenizer, there are many footguns and it's easy to set up something that almost works. If the only thing that needs to change is vocab and merge data, and they are of same size as the previous vocab and merge data, you should be fine. But if anything else in addition to vocab and merge data needs to change, you have to read and understand the full source code and make changes where needed.
+
 ## Repo maintenance
 
 Release steps:
 
 1. node test-llama-tokenizer.js
-2. open test.html
+2. open test.html (with live-server or similar)
 3. do you need to update this README?
 4. bump version number in root package.json
 5. push tokenizer changes to github
