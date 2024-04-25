@@ -13,6 +13,22 @@ const pastelColors = [
 
 const monospace = `"Roboto Mono",sfmono-regular,consolas,liberation mono,menlo,courier,monospace`;
 
+const getRenderedWidth = (text) => {
+  const canvas = document.createElement("canvas")
+  const ctx = canvas.getContext("2d")
+  const measure = ctx.measureText(text)
+  return measure.actualBoundingBoxRight - measure.actualBoundingBoxLeft
+}
+
+const getTextualRepresentationForToken = (tokenString) => {
+  tokenString = tokenString.replaceAll(" ", "\u00A0").replaceAll("\n", "\\n")
+  const width = getRenderedWidth(tokenString)
+  if (width < 0.0001) {
+    return `�`
+  }
+  return tokenString
+}
+
 const TokenizedText = ({ tokenStrings }) => (
   <div
     style={{
@@ -44,7 +60,7 @@ const TokenizedText = ({ tokenStrings }) => (
       >
         {
           <pre>
-            {tokenString.replaceAll(" ", "\u00A0").replaceAll("\n", "\\n")}
+            {getTextualRepresentationForToken(tokenString)}
           </pre>
         }
       </span>
