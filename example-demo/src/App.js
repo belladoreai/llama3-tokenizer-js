@@ -111,7 +111,7 @@ const TokenIds = ({ tokenIds }) => (
 
 const App = () => {
   const [inputText, setInputText] = useState(
-    "Replace this text in the input field to see how 🦙 tokenization works.",
+    "Replace this text in the input field...\n<|start_header_id|>...to see how 🦙 tokenization works.",
   )
 
   const encodedTokens = llama3Tokenizer.encode(inputText, { bos: false, eos: false });
