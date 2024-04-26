@@ -116,10 +116,13 @@ Release steps:
 8. bump version number in example-demo/package.json
 9. cd example-demo && npm install && npm run build && live-server
 10. push example demo changes to github
+11. create new release on github
 
 ## Who did this
 
-LLaMA3-tokenizer-js is a fork of my earlier LLaMA 1 tokenizer [llama-tokenizer-js](https://github.com/belladoreai/llama-tokenizer-js). Several helper functions used in LLaMA 3 pretokenization were adapted from the fantastic [transformers.js](https://github.com/xenova/transformers.js) library. The BPE implementation, which is the core of this library, is original work and [was adapted into transformers.js](https://github.com/belladoreai/llama-tokenizer-js/issues/9). In other words, some work has been adapted from llama-tokenizer-js into transformers.js, and some work has been adapted the other way, from transformers.js into llama3-tokenizer-js.
+LLaMA3-tokenizer-js is a fork of my earlier LLaMA 1 tokenizer [llama-tokenizer-js](https://github.com/belladoreai/llama-tokenizer-js).
+
+Several helper functions used in LLaMA 3 pretokenization were adapted from the fantastic [transformers.js](https://github.com/xenova/transformers.js) library. The BPE implementation, which is the core of this library, is original work and [was adapted into transformers.js](https://github.com/belladoreai/llama-tokenizer-js/issues/9). In other words, some work has been adapted from llama-tokenizer-js into transformers.js, and some work has been adapted the other way, from transformers.js into llama3-tokenizer-js.
 
 The example-demo (tokenizer playground) is a fork of [gpt-tokenizer playground](https://github.com/niieani/gpt-tokenizer).
 
