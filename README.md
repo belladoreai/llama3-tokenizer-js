@@ -79,17 +79,19 @@ Note that tests can be run both in browser and in Node (this is necessary becaus
 
 ## Compatibility
 
-This tokenizer is compatible with all models which have been trained on top of checkpoints released by Facebook in April 2024 ("LLaMA 3").
+This tokenizer is mostly* compatible with all models which have been trained on top of checkpoints released by Facebook in April 2024 ("LLaMA 3").
 
 What this means in practice:
 - ✅ LLaMA 3 models released by Facebook: yes, they are compatible
-- ✅ New LLaMA 3 based fine tune by somebody other than Facebook: yes, it's compatible
-- ❌ New LLaMA 3 model trained from scratch by somebody other than Facebook: probably not compatible, depends if they also retrained the tokenizer
+- ✅ New LLaMA 3 based fine tune by somebody other than Facebook: yes, it's compatible (except possibly for some special tokens*)
+- ❌ New LLaMA 3 model trained from scratch by somebody other than Facebook: probably not compatible, depends if they also retrained the tokenizer (and/or if they added their own special tokens*)
 - ❌ LLaMA 1 or LLaMA 2 based models: no, not compatible (use [llama-tokenizer-js](https://github.com/belladoreai/llama-tokenizer-js) instead)
 - ❌ OpenAI models: no, not compatible
 - ❌ Mistral models: no, not compatible
 
-If you are unsure about compatibility, try it and see if the token ids are the same (compared to running the model with, for example, the transformers library).
+_*Sometimes when people fine tune models, they change the special tokens from ids 128002 and up by adding their own tokens and even shifting the ids of pre-existing tokens. For example: [https://huggingface.co/NousResearch/Hermes-2-Pro-Llama-3-8B/blob/main/tokenizer_config.json](Hermes-2-Pro-Llama-3-8B). This is unfortunate for our token counting purposes. If you are using this library to count tokens, you should be able to work around this issue by using this library to tokenize only user input text (which shouldn't contain any special tokens) and then programmatically adding the relevant counts for the special tokens that you are using to wrap the input text. Alternatively, you can choose to ignore this issue, in which case you will be overcounting tokens by a little bit, which is not too bad (in typical use cases, undercounting can lead to more severe quality issues than overcounting)._
+
+If you are unsure about compatibility, try it and see if the token ids are the same (compared to running the model with, for example, the transformers library). If you are testing a fine tune, remember to test with the relevant special tokens.
 
 If you want to make this library work with different tokenizer data, you may be interested in [this script](data-conversion.py) which was used to convert the data.
 
