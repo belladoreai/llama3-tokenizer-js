@@ -8,7 +8,7 @@ Intended use case is calculating token count accurately on the client-side.
 
 ## Features
 
-- Easy to use: 0 dependencies, code and data baked into a [single file](llama-tokenizer.js).
+- Easy to use: 0 dependencies, code and data baked into a [single file](src/llama3-tokenizer.js).
 - Compatible with most LLaMA 3 models (see [Compatibility](#compatibility))
 - Optimized running time (highly efficient BPE implementation)
 - Somewhat optimized bundle size, though it's still ugly (data is written in a custom format where it takes up 3MB before minification and gzipping, which is ugly, yes, but still better than the original 9MB raw json data file)
@@ -67,16 +67,6 @@ llama3Tokenizer.encode("Hello world!", { bos: false, eos: false })
 
 Note that, contrary to LLaMA 1 tokenizer, the LLaMA 3 tokenizer does not add a preceding space (please open an issue if there are circumstances in which a preceding space is still added).
 
-## Tests
-
-You can run tests with:
-
-```
-llama3Tokenizer.runTests()
-```
-
-Note that tests can be run both in browser and in Node (this is necessary because some parts of the code work differently in different environments).
-
 ## Compatibility
 
 This tokenizer is mostly* compatible with all models which have been trained on top of checkpoints released by Facebook in April 2024 ("LLaMA 3").
@@ -89,11 +79,11 @@ What this means in practice:
 - ❌ OpenAI models: no, not compatible
 - ❌ Mistral models: no, not compatible
 
-_*Sometimes when people fine tune models, they change the special tokens from ids 128002 and up by adding their own tokens and even shifting the ids of pre-existing tokens. For example: [Hermes-2-Pro-Llama-3-8B](https://huggingface.co/NousResearch/Hermes-2-Pro-Llama-3-8B/blob/main/tokenizer_config.json). This is unfortunate for our token counting purposes. If you are using this library to count tokens, you should be able to work around this issue by using this library to tokenize only user input text (which shouldn't contain any special tokens) and then programmatically adding the relevant counts for the special tokens that you are using to wrap the input text. Alternatively, you can choose to ignore this issue, in which case you will be overcounting tokens by a little bit, which is not too bad (in typical use cases, undercounting can lead to more severe quality issues than overcounting)._
+_*See below section "Special tokens and fine tunes"._
 
 If you are unsure about compatibility, try it and see if the token ids are the same (compared to running the model with, for example, the transformers library). If you are testing a fine tune, remember to test with the relevant special tokens.
 
-If you want to make this library work with different tokenizer data, you may be interested in [this script](data-conversion.py) which was used to convert the data.
+If you want to make this library work with different tokenizer data, you may be interested in [this script](src/data-conversion.py) which was used to convert the data.
 
 You can pass custom vocab and merge data to the tokenizer by instantiating it like this:
 
@@ -104,21 +94,37 @@ const tokenizer = new Llama3Tokenizer(custom_vocab, custom_merge_data);
 
 Please note that if you try to adapt this library to work for a different tokenizer, there are many footguns and it's easy to set up something that almost works. If the only thing that needs to change is vocab and merge data, and they are of same size as the previous vocab and merge data, you should be fine. But if anything else in addition to vocab and merge data needs to change, you have to read and understand the full source code and make changes where needed.
 
+## Special tokens and fine tunes
+
+There is a large number of special tokens in Llama 3 (e.g. `<|end_of_text|>`). You can pass these inside text input, they will be parsed and counted correctly (try the example-demo playground if you are unsure).
+
+However, sometimes when people fine tune models, they change the special tokens by adding their own tokens and even shifting the ids of pre-existing special tokens. For example: [Hermes-2-Pro-Llama-3-8B](https://huggingface.co/NousResearch/Hermes-2-Pro-Llama-3-8B/blob/main/tokenizer_config.json). This is unfortunate for our token counting purposes. If you are using this library to count tokens, and you are using a fine tune which messes around with special tokens, you can choose one of the following approaches:
+
+1) If you need exact token counts, you can work around this issue by using this library to tokenize _only_ user input text (which shouldn't contain any special tokens) and then programmatically adding the relevant counts for the special tokens that you are using to wrap the input text.
+2) Alternatively, you can choose to ignore this issue, in which case you will be overcounting tokens by a little bit, which is not too bad (in typical use cases, undercounting can lead to more severe quality issues than overcounting).
+
+## Tests
+
+Some parts of the code might behave differently in node versus browser, so it is necessary to run tests in both:
+
+1. Node test: node test/node-test.js
+2. Browser test: run `live-server` and open test/browser-test.html
+3. TypeScript test: run `cd test/typescript-test`, bump the dependency in its package.json, run `npm i && npm test`.
+
 ## Repo maintenance
 
 Release steps:
 
-1. node test-llama-tokenizer.js
-2. open test.html (with live-server or similar)
-3. do you need to update this README?
-4. bump version number in root package.json
-5. push tokenizer changes to github
-6. npm publish --dry-run
-7. npm publish
-8. bump version number in example-demo/package.json
-9. cd example-demo && npm install && npm run build && live-server
-10. push example demo changes to github
-11. create new release on github
+1. run/update tests
+2. do you need to update this README?
+3. bump version number in root package.json
+4. push tokenizer changes to github
+5. npm publish --dry-run
+6. npm publish
+7. bump version number in example-demo/package.json
+8. cd example-demo && npm install && npm run build && live-server
+9. push example demo changes to github
+10. create new release on github
 
 ## Who did this
 

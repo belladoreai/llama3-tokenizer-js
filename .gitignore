@@ -1,2 +1,4 @@
 example-demo/node_modules/
+test/typescript-test/node_modules
 package-lock.json
+data/*
