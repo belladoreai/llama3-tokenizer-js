@@ -107,26 +107,28 @@ However, sometimes when people fine tune models, they change the special tokens 
 
 Some parts of the code might behave differently in node versus browser, so it is necessary to run tests in both:
 
-1. Node test: node test/node-test.js
+1. Node test: `node test/node-test.js`
 2. Browser test: run `live-server` and open test/browser-test.html
-3. TypeScript test: run `cd test/typescript-test && npm i && npm test`.
+3. TypeScript test: run `cd test/typescript-test && npm i && npm test`
+4. Example-demo test: run `cd example-demo && npm install && npm run build && live-server` and open the "build" folder
 
 ## Repo maintenance
 
 Release steps:
 
-1. run/update tests
-2. do you need to update this README?
+1. run node test
+2. run browser test
 3. bump version number in root package.json
-4. push tokenizer changes to github
+4. push changes to github
 5. npm publish --dry-run
 6. npm publish
 7. bump version number in example-demo/package.json
 8. bump version number in test/typescript-test
 9. run typescript test
-10. cd example-demo && npm install && npm run build && live-server
-11. push example demo changes to github
-12. create new release on github
+10. run example-demo test
+11. README update?
+12. push again to github
+13. create new release on github
 
 ## Who did this
 
