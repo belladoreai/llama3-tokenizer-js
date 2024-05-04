@@ -2,11 +2,18 @@
 
 <body>
     <h1>Open this file with live-server or similar and open console for results</h1>
-    <script type="module" src="../src/llama3-tokenizer-with-baked-data.js"></script>
+    <script type="module" src="../bundle/llama3-tokenizer-with-baked-data.js"></script>
     <script>
-        setTimeout(() => {
-            llama3Tokenizer.runTests();
-        }, 1000)
+        const tryToRunTests = () => {
+            try {
+                llama3Tokenizer.runTests();
+            } catch (ex) {
+                console.log('Module not loaded yet, retrying...')
+                setTimeout(() => tryToRunTests(), 500)
+            }
+        }
+        tryToRunTests()
+
     </script>
 </body>
 
