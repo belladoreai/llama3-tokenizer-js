@@ -8,7 +8,7 @@ Intended use case is calculating token count accurately on the client-side.
 
 ## Features
 
-- Easy to use: 0 dependencies, code and data baked into a [single file](src/llama3-tokenizer.js).
+- Easy to use: 0 dependencies, code and data baked into a [single file](bundle/llama3-tokenizer-with-baked-data.js).
 - Compatible with most LLaMA 3 models (see [Compatibility](#compatibility))
 - Optimized running time (highly efficient BPE implementation)
 - Somewhat optimized bundle size, though it's still ugly (data is written in a custom format where it takes up 3MB before minification and gzipping, which is ugly, yes, but still better than the original 9MB raw json data file)
@@ -115,6 +115,7 @@ Some parts of the code might behave differently in node versus browser, so it is
 
 Release steps:
 
+0. bundle code and data into a single file: `cd src && node create-bundle.js`
 1. run node test
 2. run browser test
 3. bump version number in root package.json
