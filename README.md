@@ -109,7 +109,6 @@ Some parts of the code might behave differently in node versus browser, so it is
 
 1. Node test: `node test/node-test.js`
 2. Browser test: run `live-server` and open test/browser-test.html
-3. TypeScript test: run `cd test/typescript-test && npm i && npm test`
 4. Example-demo test: run `cd example-demo && npm install && npm run build && live-server` and open the "build" folder
 
 ## Repo maintenance
@@ -123,8 +122,6 @@ Release steps:
 5. npm publish --dry-run
 6. npm publish
 7. bump version number in example-demo/package.json
-8. bump version number in test/typescript-test
-9. run typescript test
 10. run example-demo test
 11. README update?
 12. push again to github
