@@ -100,8 +100,9 @@ There is a large number of special tokens in Llama 3 (e.g. `<|end_of_text|>`). Y
 
 However, sometimes when people fine tune models, they change the special tokens by adding their own tokens and even shifting the ids of pre-existing special tokens. For example: [Hermes-2-Pro-Llama-3-8B](https://huggingface.co/NousResearch/Hermes-2-Pro-Llama-3-8B/blob/main/tokenizer_config.json). This is unfortunate for our token counting purposes. If you are using this library to count tokens, and you are using a fine tune which messes around with special tokens, you can choose one of the following approaches:
 
-1) If you need exact token counts, you can work around this issue by using this library to tokenize _only_ user input text (which shouldn't contain any special tokens) and then programmatically adding the relevant counts for the special tokens that you are using to wrap the input text.
-2) Alternatively, you can choose to ignore this issue, in which case you will be overcounting tokens by a little bit, which is not too bad (in typical use cases, undercounting can lead to more severe quality issues than overcounting).
+1) Instead of calling `.encode(str).length`, you can call `.optimisticCount(str)`. Optimistic count is a convenience function which parses the text with the assumption that anything that looks like a special token (e.g. `<|boom|>`) is actually a special token.
+2) If you need exact token counts, you can work around this issue by using this library to tokenize _only_ user input text (which shouldn't contain any special tokens) and then programmatically adding the relevant counts for the special tokens that you are using to wrap the input text.
+3) Alternatively, you can choose to ignore this issue, in which case you will be overcounting tokens by a little bit, which is not too bad (in typical use cases, undercounting can lead to more severe quality issues than overcounting).
 
 ## Tests
 
