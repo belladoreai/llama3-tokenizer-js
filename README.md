@@ -38,7 +38,15 @@ async function main() {
 main();
 ```
 
-Experimental alternative for CommonJS projects: load the file [bundle/commonjs-llama3-tokenizer-with-baked-data.js](https://belladoreai.github.io/llama3-tokenizer-js/bundle/commonjs-llama3-tokenizer-with-baked-data.js).
+Experimental alternative file for CommonJS projects: [bundle/commonjs-llama3-tokenizer-with-baked-data.js](https://belladoreai.github.io/llama3-tokenizer-js/bundle/commonjs-llama3-tokenizer-with-baked-data.js).
+
+Additionally, it's possible to load the [main bundle file](bundle/llama3-tokenizer-with-baked-data.js) with simple `<script>` tags:
+
+```
+<script type="module" src="https://belladoreai.github.io/llama3-tokenizer-js/bundle/llama3-tokenizer-with-baked-data.js"></script>
+```
+
+If you decide to load with script tags, be sure to either grab a copy of the file into your local build, or change the github URL such that you lock the file to a specific commit.
 
 ## Usage
 
