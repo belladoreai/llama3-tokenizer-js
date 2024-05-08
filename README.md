@@ -13,9 +13,9 @@ Intended use case is calculating token count accurately on the client-side.
 - Optimized running time (highly efficient BPE implementation)
 - Somewhat optimized bundle size, though it's still ugly (data is written in a custom format where it takes up 3MB before minification and gzipping, which is ugly, yes, but still better than the original 9MB raw json data file)
 
-## Import
+## Quick start
 
-Recommended way: Install as an npm package and import as ES6 module
+Install as an npm package and import as ES6 module
 
 ```
 npm install llama3-tokenizer-js
@@ -24,8 +24,10 @@ npm install llama3-tokenizer-js
 ```
 import llama3Tokenizer from 'llama3-tokenizer-js'
 
-console.log(llama3Tokenizer.encode("Hello world!").length)
+console.log(llama3Tokenizer.encode("Hello world!").length) // returns token count 5
 ```
+
+## Alternative ways to import
 
 Alternative for CommonJS projects:
 
