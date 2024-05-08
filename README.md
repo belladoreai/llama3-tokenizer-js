@@ -27,13 +27,15 @@ import llama3Tokenizer from 'llama3-tokenizer-js'
 console.log(llama3Tokenizer.encode("Hello world!").length)
 ```
 
-Alternative: for CommonJS projects this should work:
+Alternative for CommonJS projects:
 
 ```
 async function main() {
     const llama3Tokenizer = await import('llama3-tokenizer-js')
     console.log(llama3Tokenizer.default.encode("Hello world!").length)
 }
+
+Experimental alternative for CommonJS projects: load the file [bundle/commonjs-llama3-tokenizer-with-baked-data.js](https://belladoreai.github.io/llama3-tokenizer-js/bundle/commonjs-llama3-tokenizer-with-baked-data.js).
 
 main();
 ```

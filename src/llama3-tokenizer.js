@@ -205,7 +205,7 @@ class PriorityQueue {
     }
 }
 
-export class Llama3Tokenizer {
+class Llama3Tokenizer {
 
     vocabById;
     vocabByString;

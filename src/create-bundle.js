@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 
-// This script bundles the code and data into a single file which can be easily loaded.
+// This script bundles the code and data into a single file which can be easily loaded (ES6)
+// and also into another file for CommonJS.
 fs.readFile('llama3-tokenizer.js', 'utf8', (err, code) => {
     if (err) {
         console.error(err)
@@ -13,23 +14,49 @@ fs.readFile('llama3-tokenizer.js', 'utf8', (err, code) => {
             return
         }
 
-        const content = [
-            code,
-            data,
-            "const llama3Tokenizer = new Llama3Tokenizer();",
-            "if (typeof window !== 'undefined') { window.llama3Tokenizer = llama3Tokenizer; }",
-            "export default llama3Tokenizer",
-            "try { if (typeof module !== 'undefined' && module.exports) { exports.llama3Tokenizer = llama3Tokenizer } } catch (ex) { }"
-        ].join("\n\n")
-
-        fs.writeFile('../bundle/llama3-tokenizer-with-baked-data.js', content, err3 => {
+        // Create ES6 bundle
+        fs.readFile('suffix-es6-exports.js', 'utf8', (err3, es6exports) => {
             if (err3) {
-              console.error(err3)
-              return
-            } else {
-              console.log('bundle written successfully')
+                console.error(err3)
+                return
             }
-        });
+
+            const content = [
+                code,
+                data,
+                es6exports
+            ].join("\n\n")
+    
+            fs.writeFile('../bundle/llama3-tokenizer-with-baked-data.js', content, err4 => {
+                if (err4) {
+                  console.error(err4)
+                  return
+                }
+            });
+        })
+
+        // Create CommonJS bundle
+        fs.readFile('suffix-commonjs-exports.js', 'utf8', (err3, commonJsExports) => {
+            if (err3) {
+                console.error(err3)
+                return
+            }
+
+            const content = [
+                code,
+                data,
+                commonJsExports
+            ].join("\n\n")
+    
+            fs.writeFile('../bundle/commonjs-llama3-tokenizer-with-baked-data.js', content, err4 => {
+                if (err4) {
+                  console.error(err4)
+                  return
+                }
+            });
+        })
+
+        console.log('bundles written successfully')
     })
 });
 
