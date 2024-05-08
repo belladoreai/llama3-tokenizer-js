@@ -35,10 +35,10 @@ async function main() {
     console.log(llama3Tokenizer.default.encode("Hello world!").length)
 }
 
-Experimental alternative for CommonJS projects: load the file [bundle/commonjs-llama3-tokenizer-with-baked-data.js](https://belladoreai.github.io/llama3-tokenizer-js/bundle/commonjs-llama3-tokenizer-with-baked-data.js).
-
 main();
 ```
+
+Experimental alternative for CommonJS projects: load the file [bundle/commonjs-llama3-tokenizer-with-baked-data.js](https://belladoreai.github.io/llama3-tokenizer-js/bundle/commonjs-llama3-tokenizer-with-baked-data.js).
 
 ## Usage
 
