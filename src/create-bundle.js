@@ -15,15 +15,12 @@ fs.readFile('llama3-tokenizer.js', 'utf8', (err, code) => {
 
         const content = [
             code,
-            "",
             data,
-            "",
             "const llama3Tokenizer = new Llama3Tokenizer();",
-            "",
             "if (typeof window !== 'undefined') { window.llama3Tokenizer = llama3Tokenizer; }",
-            "",
-            "export default llama3Tokenizer"
-        ].join("\n")
+            "export default llama3Tokenizer",
+            "try { if (typeof module !== 'undefined' && module.exports) { exports.llama3Tokenizer = llama3Tokenizer } } catch (ex) { }"
+        ].join("\n\n")
 
         fs.writeFile('../bundle/llama3-tokenizer-with-baked-data.js', content, err3 => {
             if (err3) {
