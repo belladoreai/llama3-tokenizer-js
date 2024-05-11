@@ -29,7 +29,15 @@ console.log(llama3Tokenizer.encode("Hello world!").length) // returns token coun
 
 ## Alternative ways to import
 
-Alternative for CommonJS projects:
+It's possible to load the [main bundle file](bundle/llama3-tokenizer-with-baked-data.js) with simple `<script>` tags:
+
+```
+<script type="module" src="https://belladoreai.github.io/llama3-tokenizer-js/bundle/llama3-tokenizer-with-baked-data.js"></script>
+```
+
+If you decide to load with script tags, be sure to either grab a copy of the file into your local build, or change the github URL such that you lock the file to a specific commit.
+
+Alternative import syntax for CommonJS projects:
 
 ```
 async function main() {
@@ -40,15 +48,7 @@ async function main() {
 main();
 ```
 
-Experimental alternative file for CommonJS projects: [bundle/commonjs-llama3-tokenizer-with-baked-data.js](https://belladoreai.github.io/llama3-tokenizer-js/bundle/commonjs-llama3-tokenizer-with-baked-data.js).
-
-Additionally, it's possible to load the [main bundle file](bundle/llama3-tokenizer-with-baked-data.js) with simple `<script>` tags:
-
-```
-<script type="module" src="https://belladoreai.github.io/llama3-tokenizer-js/bundle/llama3-tokenizer-with-baked-data.js"></script>
-```
-
-If you decide to load with script tags, be sure to either grab a copy of the file into your local build, or change the github URL such that you lock the file to a specific commit.
+If you need to use CommonJS with the normal import syntax, you can try loading this experimental CommonJS version of the library: [bundle/commonjs-llama3-tokenizer-with-baked-data.js](https://belladoreai.github.io/llama3-tokenizer-js/bundle/commonjs-llama3-tokenizer-with-baked-data.js).
 
 ## Usage
 
@@ -81,6 +81,8 @@ Note that, contrary to LLaMA 1 tokenizer, the LLaMA 3 tokenizer does not add a p
 
 ## Compatibility
 
+### Model families
+
 This tokenizer is mostly* compatible with all models which have been trained on top of checkpoints released by Facebook in April 2024 ("LLaMA 3").
 
 What this means in practice:
@@ -95,6 +97,8 @@ _*See below section "Special tokens and fine tunes"._
 
 If you are unsure about compatibility, try it and see if the token ids are the same (compared to running the model with, for example, the transformers library). If you are testing a fine tune, remember to test with the relevant special tokens.
 
+### Adapting this library for incompatible models
+
 If you want to make this library work with different tokenizer data, you may be interested in [this script](src/data-conversion.py) which was used to convert the data.
 
 You can pass custom vocab and merge data to the tokenizer by instantiating it like this:
@@ -106,7 +110,11 @@ const tokenizer = new Llama3Tokenizer(custom_vocab, custom_merge_data);
 
 Please note that if you try to adapt this library to work for a different tokenizer, there are many footguns and it's easy to set up something that almost works. If the only thing that needs to change is vocab and merge data, and they are of same size as the previous vocab and merge data, you should be fine. But if anything else in addition to vocab and merge data needs to change, you have to read and understand the full source code and make changes where needed.
 
-## Special tokens and fine tunes
+### Special eos token
+
+It's common with language models, including Llama 3, to denote the end of sequence (eos) with a special token. Please note that in May 2024 the eos token in the official Huggingface repo for Llama 3 instruct was changed by Huggingface staff from `<|end_of_text|>` to `<|eot_id|>`. Both of these special tokens already existed in the tokenizer, the change merely affects how these tokens are treated in commonly used software such as oobabooga. This change makes sense in the context of Llama 3 instruct, but it does not make sense in the context of Llama 3 base model. Therefore, I have decided I will not change the eos token in this library. In any case, this discrepancy will not affect token counts. It's something you need to be aware of only if you use the generated tokens for purposes other than counting.
+
+### Special tokens and fine tunes
 
 There is a large number of special tokens in Llama 3 (e.g. `<|end_of_text|>`). You can pass these inside text input, they will be parsed and counted correctly (try the example-demo playground if you are unsure).
 
@@ -118,11 +126,11 @@ However, sometimes when people fine tune models, they change the special tokens 
 
 ## Tests
 
-Some parts of the code might behave differently in node versus browser, so it is necessary to run tests in both:
-
 1. Node test: `node test/node-test.js`
 2. Browser test: run `live-server` and open test/browser-test.html
 4. Example-demo test: run `cd example-demo && npm install && npm run build && live-server` and open the "build" folder
+
+Note that some parts of the code might behave differently in node compared to browser environment.
 
 ## Repo maintenance
 
