@@ -54,6 +54,15 @@ fs.readFile('llama3-tokenizer.js', 'utf8', (err, code) => {
                   return
                 }
             });
+
+            // Someone on GitHub requested that for them to load the file it has to end in .cjs,
+            // and I didn't want to break existing filepaths, so we'll just have the same bundle in 2 different files.
+            fs.writeFile('../bundle/commonjs-llama3-tokenizer-with-baked-data.cjs', content, err4 => {
+                if (err4) {
+                  console.error(err4)
+                  return
+                }
+            });
         })
 
         console.log('bundles written successfully')
