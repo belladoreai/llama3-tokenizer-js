@@ -114,19 +114,21 @@ function reverseDictionary(data) {
 
 const UNICODE_TO_BYTES = reverseDictionary(BYTES_TO_UNICODE);
 
+// When you update special tokens, remember to also update specialTokenRegex
 const llama3SpecialTokens = [
     '<|begin_of_text|>',
     '<|end_of_text|>',
     '<|reserved_special_token_0|>',
     '<|reserved_special_token_1|>',
+    '<|finetune_right_pad_id|>',
     '<|reserved_special_token_2|>',
-    '<|reserved_special_token_3|>',
     '<|start_header_id|>',
     '<|end_header_id|>',
-    '<|reserved_special_token_4|>',
-    '<|eot_id|>'
+    '<|eom_id|>',
+    '<|eot_id|>',
+    '<|python_tag|>'
 ];
-for (let i = 5; i <= 250; i++) {
+for (let i = 3; i <= 247; i++) {
     llama3SpecialTokens.push(`<|reserved_special_token_${i}|>`);
 }
 
@@ -328,7 +330,7 @@ class Llama3Tokenizer {
         }
 
         // Allow passing an alternative special token regex. Needed for optimisticCount.
-        const specialTokenRegex = options.specialTokenRegex ?? /<\|(?:begin_of_text|end_of_text|start_header_id|end_header_id|eot_id|reserved_special_token_(?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|250))\|>/g
+        const specialTokenRegex = options.specialTokenRegex ?? /<\|(?:begin_of_text|end_of_text|start_header_id|end_header_id|eot_id|eom_id|python_tag|finetune_right_pad_id|reserved_special_token_(?:[0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-3][0-9]|24[0-7]))\|>/g
     
         if (!this.vocabById || !this.vocabByString || !this.merges) {
             console.log('Tokenizer not initialized properly!')
@@ -646,15 +648,17 @@ class Llama3Tokenizer {
         testEncode("I", [128000, 40, 128001])
 
         // Special tokens
-        testEncodeAndDecode('<|start_header_id|>This text has special tokens<|reserved_special_token_4|> in the middle of it.<|end_header_id|><|eot_id|>', [128006, 2028, 1495, 706, 3361, 11460, 128008, 304, 279, 6278, 315, 433, 13, 128007, 128009])
         testDecode([128000], '<|begin_of_text|>')
         testDecode([128006], '<|start_header_id|>')
-        testDecode([128255], '<|reserved_special_token_250|>')
+        testDecode([128004], '<|finetune_right_pad_id|>')
+        testDecode([128008], '<|eom_id|>')
+        testDecode([128010], '<|python_tag|>')
         testDecode([128000, 2028, 374, 264, 1296, 11914, 13, 128001], "<|begin_of_text|>This is a test sentence.<|end_of_text|>") // Test from official LLaMA 3 library
+        testEncodeAndDecode('<|start_header_id|>This text has special tokens<|eom_id|> in the middle of it.<|end_header_id|><|eot_id|>', [128006, 2028, 1495, 706, 3361, 11460, 128008, 304, 279, 6278, 315, 433, 13, 128007, 128009])
 
         // Test for regex errors in the regex that is used to split input by special tokens, it has complicated regex to validate that reserved special tokens only go from 0 to 250
         const stringsThatLookLikeSpecialTokens = [
-            // These are real special tokens
+            // These are real special tokens in both Llama 3 and Llama 3.1
             '<|reserved_special_token_0|>',
             '<|reserved_special_token_9|>',
             '<|reserved_special_token_10|>',
@@ -665,28 +669,34 @@ class Llama3Tokenizer {
             '<|reserved_special_token_178|>',
             '<|reserved_special_token_199|>',
             '<|reserved_special_token_200|>',
-            '<|reserved_special_token_249|>',
-            '<|reserved_special_token_250|>',
+            '<|reserved_special_token_246|>',
+            '<|reserved_special_token_247|>',
             // These are not real special tokens and should be processed as normal text (unless calling optimisticCount)
             '<|reserved_special_token_00|>',
             '<|reserved_special_token_09|>',
             '<|reserved_special_token_010|>',
             '<|reserved_special_token_251|>',
             '<|reserved_special_token_666|>',
+            // These are treated as "not real special tokens" as they are not special tokens in Llama 3.1 (even though they technically are special tokens in Llama 3) (shouldn't matter, they should not be in use anyway, for simplicity do it like this)
+            '<|reserved_special_token_248|>',
+            '<|reserved_special_token_249|>',
+            '<|reserved_special_token_250|>',
         ]
         testEncodeAndDecode(stringsThatLookLikeSpecialTokens.join(""),
-        [128002, 128014, 128015, 128024, 128058, 128104, 128105, 128183, 128204, 128205, 128254, 128255, 27, 91, 52202, 42729, 6594, 62, 410, 91, 1822, 91, 52202, 42729, 6594, 62, 2545, 91, 1822, 91, 52202, 42729, 6594, 62, 7755, 91, 1822, 91, 52202, 42729, 6594, 62, 13860, 91, 1822, 91, 52202, 42729, 6594, 62, 10943, 91, 29])
+        [128002,128017,128018,128027,128061,128107,128108,128186,128207,128208,128254,128255,27,91,52202,42729,6594,62,410,91,1822,91,52202,42729,6594,62,2545,91,1822,91,52202,42729,6594,62,7755,91,1822,91,52202,42729,6594,62,13860,91,1822,91,52202,42729,6594,62,10943,91,1822,91,52202,42729,6594,62,14185,91,1822,91,52202,42729,6594,62,14735,91,1822,91,52202,42729,6594,62,5154,91,29])
         
         testOptimisticCount([
+            // 2 tokens for bos and eos
+            // 20 tokens from the following
             ...stringsThatLookLikeSpecialTokens,
-            // These should be assumed to be real tokens
+            // 2 tokens from the following (optimisticCount assumes strings that look like this are real tokens)
             '<|new_tok|>',
             '<|t|>',
-            // These should NOT be parsed as real tokens, but as normal text
+            // 13 tokens from the following (these should NOT be parsed as real tokens, but as normal text)
             '<||>',
             '<|hello world|>',
             '<|what!|>'
-        ].join(""), 34)
+        ].join(""), 37)
     
         console.log('LLaMA 3 Tokenizer tests passed successfully.')
         return true

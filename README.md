@@ -1,8 +1,10 @@
 # 🦙 llama3-tokenizer-js 🦙
 
-JavaScript tokenizer for LLaMA 3 which works client-side in the browser (and also in Node) (now also with TypeScript support).
+JavaScript tokenizer for LLaMA 3 and LLaMA 3.1.
 
 Intended use case is calculating token count accurately on the client-side.
+
+Works client-side in the browser, in Node, in TypeScript codebases, in ES6 projects, and in CommonJS projects.
 
 <a href="https://belladoreai.github.io/llama3-tokenizer-js/example-demo/build/">Click here for demo</a>
 
