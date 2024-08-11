@@ -85,11 +85,12 @@ Note that, contrary to LLaMA 1 tokenizer, the LLaMA 3 tokenizer does not add a p
 
 ### Model families
 
-This tokenizer is mostly* compatible with all models which have been trained on top of checkpoints released by Facebook in April 2024 ("LLaMA 3").
+This tokenizer is mostly* compatible with all models which have been trained on top of "LLaMA 3" and "LLaMA 3.1" checkpoints.
 
 What this means in practice:
 - ✅ LLaMA 3 models released by Facebook: yes, they are compatible
-- ✅ New LLaMA 3 based fine tune by somebody other than Facebook: yes, it's compatible (except possibly for some special tokens*)
+- ✅ LLaMA 3.1 models released by Facebook: yes, they are compatible
+- ✅ New LLaMA 3 or 3.1 based fine tune by somebody other than Facebook: yes, it's compatible (except possibly for some special tokens*)
 - ❌ New LLaMA 3 model trained from scratch by somebody other than Facebook: probably not compatible, depends if they also retrained the tokenizer (and/or if they added their own special tokens*)
 - ❌ LLaMA 1 or LLaMA 2 based models: no, not compatible (use [llama-tokenizer-js](https://github.com/belladoreai/llama-tokenizer-js) instead)
 - ❌ OpenAI models: no, not compatible
