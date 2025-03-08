@@ -160,4 +160,4 @@ Several helper functions used in LLaMA 3 pretokenization were adapted from [tran
 
 The example-demo (tokenizer playground) is a fork of [gpt-tokenizer playground](https://github.com/niieani/gpt-tokenizer).
 
-Developed by [belladore.ai](https://belladore.ai) with contributions from [xenova](https://github.com/xenova), [blaze2004](https://github.com/blaze2004), [imoneoi](https://github.com/imoneoi), [norlesh](https://github.com/norlesh) and [ConProgramming](https://github.com/ConProgramming).
+Developed by [belladore.ai](https://belladore.ai) with contributions from [xenova](https://github.com/xenova), [blaze2004](https://github.com/blaze2004), [imoneoi](https://github.com/imoneoi), [norlesh](https://github.com/norlesh), [ConProgramming](https://github.com/ConProgramming) and [rjeli](https://github.com/rjeli).
