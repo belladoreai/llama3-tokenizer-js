@@ -1,6 +1,6 @@
 # 🦙 llama3-tokenizer-js 🦙
 
-JavaScript tokenizer for LLaMA 3 and LLaMA 3.1.
+JavaScript tokenizer for LLaMA 3, 3.1 and 3.2.
 
 Intended use case is calculating token count accurately on the client-side.
 
